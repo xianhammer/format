@@ -1,0 +1,311 @@
+package main
+
+import (
+	"bufio"
+	"flag"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
+)
+
+const (
+	version   = "2019-09-18a"
+	empty     = ""
+	inputpath = "."
+	separator = '\t'
+	// timestampFormat = time.RFC1123 // See https://golang.org/pkg/time/#pkg-constants
+	logTimeFormat = "2006-01-02 15:04:05.999"
+)
+
+var options struct {
+	help    bool
+	log     string
+	logging *os.File
+}
+
+type command struct {
+	call func() (err error)
+	help string
+	args []string
+}
+
+var commands = map[string]command{
+	"joincsv": {
+		joincsv,
+		"Join multiple CSV files into one.",
+		[]string{
+			"N\tSkip N lines of each input file",
+			"input-files\tFiles or paths to join. If directory all CSV files are used in lexicographic order",
+			"output\tResulting, joined, file. If underscore (_) output is sent to stdout",
+		},
+	},
+}
+
+func init() {
+	var (
+		shorthand = " (shorthand)"
+		usageHelp = "Show this"
+		usageLog  = "Output logging information to this file. If empty, log to stdout."
+		// usageOutput = "Send output to this CSV file."
+		// usageInput  = "Read source files (CSV) from this path."
+	)
+
+	flag.BoolVar(&options.help, "help", false, usageHelp)
+	flag.BoolVar(&options.help, "h", false, usageHelp+shorthand)
+
+	flag.StringVar(&options.log, "log", empty, usageLog)
+	flag.StringVar(&options.log, "l", empty, usageLog)
+
+	// flag.StringVar(&options.input, "input", inputpath, usageInput)
+	// flag.StringVar(&options.input, "i", inputpath, usageInput)
+
+	// flag.StringVar(&options.output, "output", empty, usageOutput)
+	// flag.StringVar(&options.output, "o", empty, usageOutput)
+}
+
+func main() {
+	flag.Parse()
+
+	_, filename := filepath.Split(flag.CommandLine.Name())
+	filename = strings.TrimSuffix(filename, filepath.Ext(filename))
+	fmt.Fprintf(os.Stderr, "%s [Version %s, by Christian Hammer]\n", filename, version)
+
+	if !options.help && flag.NArg() < 1 {
+		log.Fatalln("Missing command.")
+		options.help = true
+	}
+
+	var err error
+	options.logging = os.Stdout
+	if options.log != empty {
+		options.logging, err = os.Create(options.log)
+		if err != nil {
+			log.Fatalln(err)
+		}
+	}
+
+	cmd, found := commands[flag.Arg(0)]
+	if !found {
+		log.Fatalf("Unknown command %s\n", flag.Arg(0))
+		options.help = true
+	}
+
+	err = cmd.call()
+	if err != nil {
+		log.Fatalf("%s error: %v\n", flag.Arg(0), err)
+	}
+
+	if options.help {
+		out := flag.CommandLine.Output()
+		fmt.Fprintf(out, "Usage:\n\t%s [options] <command> <command-args...>\n", filename)
+
+		fmt.Fprintf(out, "\nOptions:\n")
+		flag.PrintDefaults()
+
+		fmt.Fprintf(out, "\nCommands:\n")
+		for key, info := range commands {
+			fmt.Fprintf(out, "\t%s\t%s\n", key, info.help)
+			for _, arghelp := range info.args {
+				fmt.Fprintf(out, "\t\t%s\n", arghelp)
+			}
+		}
+		return
+	}
+}
+
+func logtime() string {
+	return time.Now().UTC().Format(logTimeFormat)
+}
+
+type namedfile struct {
+	path string
+	file *os.File
+}
+
+type byFilename []namedfile
+
+func (s byFilename) Len() int {
+	return len(s)
+}
+
+func (s byFilename) Less(i, j int) bool {
+	return s[i].path < s[j].path
+}
+
+func (s byFilename) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+type excelcsv struct {
+	Quote           byte
+	InSeparator     byte
+	OutSeparator    byte
+	RecordSeparator byte //= '\n'
+	output          io.Writer
+	// Encoder         encoding.Encoding //:= unicode.UTF16(unicode.LittleEndian, unicode.UseBOM)
+}
+
+func NewExcelCSVWriter(output io.Writer) (e *excelcsv) {
+	e = new(excelcsv)
+	e.Quote = '"'
+	e.RecordSeparator = '\n'
+	e.InSeparator = ','
+	e.OutSeparator = '\t'
+
+	encoder := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM)
+	e.output = transform.NewWriter(output, encoder.NewEncoder())
+	return
+}
+
+func (e *excelcsv) Write(b []byte) (n int, err error) {
+	// Trim newline bytes at end
+	last := len(b) - 1
+	for ; last > 0 && (b[last] == '\r' || b[last] == '\n'); last-- {
+	}
+	b = b[:last]
+
+	tgtPos := 0
+	quote, emitSeparator := 0, 2
+
+	for /*pos*/ _, c := range b {
+		if c == e.Quote {
+			if quote%2 == 0 {
+				c = 0
+			}
+			quote++
+		} else if c == e.InSeparator {
+			if quote%emitSeparator == 0 {
+				c = e.OutSeparator
+				if tgtPos > 0 && b[tgtPos-1] == e.Quote {
+					tgtPos--
+				}
+			}
+		}
+
+		if c != 0 {
+			b[tgtPos] = c
+			tgtPos++
+		}
+	}
+
+	b[tgtPos] = e.RecordSeparator
+	return e.output.Write(b[:tgtPos+1])
+}
+
+// Join multiple CSV files into one ignoring the first N lines.
+// Syntax: joincsv <N> <input-file(s)> <output>
+// N may be omitted, if included, it must be a positive integer.
+// Input-files may be omitted, then current work path is used and scanned for CSV files.
+// Input-files may be directories which are scanned for CSV files.
+// Files from the scanned paths are lexicographic ordered.
+// Output may be '_' (underscore) which mean out is sent to stdout.
+// The output argument is required!
+func joincsv() (err error) {
+	if flag.NArg() < 2 {
+		options.help = true
+		return
+	}
+
+	outpath := flag.Arg(flag.NArg() - 1)
+	var outfile *os.File
+	if outpath == "_" {
+		outfile = os.Stdout
+	} else {
+		outfile, err = os.Create(outpath)
+		defer outfile.Close()
+	}
+
+	if err != nil {
+		return
+	}
+
+	argOffset := 1
+	ignoreLinesUntil, err := strconv.Atoi(flag.Arg(argOffset))
+	if err == nil {
+		argOffset++
+	} else {
+		err = nil
+		ignoreLinesUntil = 0
+	}
+
+	// Fetch input files
+	var files []namedfile
+	for argEnd := flag.NArg() - 1; argOffset < argEnd; argOffset++ {
+		filename := flag.Arg(argOffset)
+		f, err := os.Open(filename)
+		if err != nil {
+			fmt.Fprintf(options.logging, "%s: File (%s) ignored due to error: %v\n", logtime(), filename, err)
+			continue
+		}
+
+		stat, err := f.Stat()
+		if err != nil {
+			fmt.Fprintf(options.logging, "%s: File (%s) ignored due to error: %v\n", logtime(), filename, err)
+		} else if stat.IsDir() {
+			fis, err := f.Readdir(-1)
+			if err != nil {
+				fmt.Fprintf(options.logging, "%s: Directory (%s) ignored due to error: %v\n", logtime(), filename, err)
+				continue
+			}
+
+			for _, fi := range fis {
+				if fi.IsDir() || !strings.HasSuffix(fi.Name(), ".csv") {
+					continue
+				}
+
+				p := filepath.Join(filename, fi.Name())
+				f, err = os.Open(p)
+				if err != nil {
+					fmt.Fprintf(options.logging, "%s: File (%s) ignored due to error: %v\n", logtime(), p, err)
+					continue
+				}
+
+				files = append(files, namedfile{p, f})
+			}
+		} else {
+			files = append(files, namedfile{filename, f})
+		}
+	}
+
+	sort.Sort(byFilename(files))
+
+	var totalLines int
+	// Process files.
+	writerTarget := NewExcelCSVWriter(outfile)
+	for _, f := range files {
+		br := bufio.NewReader(f.file)
+
+		var line int
+		for line = 1; err == nil; line++ {
+			var b []byte
+			b, err = br.ReadBytes('\n')
+			if err != nil || b[0] == '#' || line <= ignoreLinesUntil {
+				continue
+			}
+
+			_, err = writerTarget.Write(b)
+		}
+
+		if err == nil || err == io.EOF {
+			err = nil // Clear io.EFO err
+			fmt.Fprintf(options.logging, "%s: Added file %s (%d lines)\n", logtime(), f.path, line)
+		} else {
+			fmt.Fprintf(options.logging, "%s: File (%s) record (line %d) error: %v\n", logtime(), f.path, line, err)
+		}
+
+		f.file.Close()
+		totalLines += line
+	}
+
+	fmt.Fprintf(options.logging, "%s: Output %d lines\n", logtime(), totalLines)
+	return
+}
