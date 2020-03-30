@@ -24,8 +24,7 @@ func Hex(b []byte) (i uint64, n int) {
 // If a non-digit is met, parsing stops.
 // Return n - number of bytes read, and i - the value found.
 func Decimal(b []byte) (i uint64, n int) {
-	l := len(b)
-	for ; n < l && (b[n]-'0') < 10; n++ {
+	for l := len(b); n < l && (b[n]-'0') < 10; n++ {
 		i = (i * 10) + uint64(b[n]&0x0F)
 	}
 	return
@@ -35,16 +34,16 @@ func Decimal(b []byte) (i uint64, n int) {
 // If a non-compliant byte is met, parsing stops.
 // Return n - number of bytes read, and f - the value found.
 func Float(b []byte) (f float64, n int) {
-	var ip, fp, e int64
+	var ip, fp, e uint64
 	l := len(b)
 	for ; n < l && (b[n]-'0') < 10; n++ {
-		ip = 10*ip + int64(b[n]&0x0f)
+		ip = (ip * 10) + uint64(b[n]&0x0f)
 	}
 
 	e, f = 1, float64(ip)
 	if n < l && b[n] == '.' {
 		for n++; n < l && (b[n]-'0') < 10; n++ {
-			fp = 10*fp + int64(b[n]&0x0f)
+			fp = (fp * 10) + uint64(b[n]&0x0f)
 			e *= 10
 		}
 		f += float64(fp) / float64(e)
@@ -62,7 +61,7 @@ func Float(b []byte) (f float64, n int) {
 	}
 
 	for ; n < l && (b[n]-'0') < 10; n++ {
-		exp = 10*exp + int(b[n]&0x0f)
+		exp = (exp * 10) + int(b[n]&0x0f)
 	}
 
 	if exp != 0 {

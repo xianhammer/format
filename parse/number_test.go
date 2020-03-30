@@ -22,7 +22,7 @@ func TestHex(t *testing.T) {
 		{"f012", 0xF012, 4},
 		{"f012g", 0xF012, 4},
 		{"F012g", 0xF012, 4},
-		{"A0g", 0xA0, 4},
+		{"A0g", 0xA0, 2},
 
 		{"3DA408B9", 0x3DA408B9, 8},
 		{"FFFFFFFF5B", 0xFFFFFFFF5B, 10},
@@ -39,8 +39,8 @@ func TestHex(t *testing.T) {
 	}
 }
 
-func TestInteger(t *testing.T) {
-	// func Integer(b []byte) (i uint64, n int)
+func TestDecimal(t *testing.T) {
+	// func Decimal(b []byte) (i uint64, n int)
 	tests := []struct {
 		input      string
 		expect     uint64
@@ -54,7 +54,7 @@ func TestInteger(t *testing.T) {
 	}
 
 	for testID, test := range tests {
-		got, gotSize := Integer([]byte(test.input))
+		got, gotSize := Decimal([]byte(test.input))
 		if got != test.expect {
 			t.Errorf("[test=%d] Expected [%v], got [%v]\n", testID, test.expect, got)
 		}
