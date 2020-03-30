@@ -21,7 +21,7 @@ func FormatStandard(f *numFmt, data []byte) (out string) {
 }
 
 func FormatInteger(f *numFmt, data []byte) (out string) {
-	val, _ := parse.Integer(data)
+	val, _ := parse.Decimal(data)
 	return fmt.Sprintf(f.format, val)
 }
 
@@ -92,7 +92,7 @@ func (f *numFmt) toXMLBuilder(b *xml.Builder) {
 var rFormatCode = regexp.MustCompile(`TZName|Z:Z|ZZ|dd|MM|yyyy|yy|hh|mm|ss|[\[\]ZdMyhms]`) //+[0#?.,*_@]
 var formatreplacer = func() (replacer func(in string) (out string)) {
 	// So, stupid M$ has at least TWO distinct formats (for eg. dates): "dd\-mm\-yyyy\ hh:mm:ss" and "dd-MM-yyyy hh:mm:ss"
-	// This, of course, makes parse so much harder - grrrrrrr....
+	// This, of course, makes parsing so much harder - grrrrrrr....
 	previous := ""
 	return func(in string) (out string) {
 		defer func() { previous = in }()
