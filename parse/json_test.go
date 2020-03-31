@@ -55,6 +55,8 @@ func TestJSON_simple(t *testing.T) {
 		{"falseZ", false, 5},
 		{"nullZ", nil, 4},
 		{`"some text"z`, "some text", 2 + 9},
+
+		{`"<a href=\"http://www.apache.org/\">"`, `<a href="http://www.apache.org/">`, 2 + 35},
 	}
 
 	for testID, test := range tests {
@@ -76,17 +78,28 @@ func TestJSON_compound(t *testing.T) {
 		expectSize int
 	}{
 		{"[]", []interface{}{}, 2},
+		{"[ ]", []interface{}{}, 3},
 		{"[1]", []interface{}{1.0}, 3},
 		{"[1,2]", []interface{}{1.0, 2.0}, 5},
+		{"[null,null]", []interface{}{nil, nil}, 11},
 		{"[true,1 ,  \"string\"]", []interface{}{true, 1.0, "string"}, 20},
 		{"[true,[1 ,  \"string\"]]", []interface{}{true, []interface{}{1.0, "string"}}, 22},
 
 		{"{}", map[string]interface{}{}, 2},
+		{"{ }", map[string]interface{}{}, 3},
+		{"{\t}", map[string]interface{}{}, 3},
+		{"{\n}", map[string]interface{}{}, 3},
 		{`{"a":1}`, map[string]interface{}{"a": 1.0}, 7},
 		{`{"a":1,"b":2}`, map[string]interface{}{"a": 1.0, "b": 2.0}, 13},
 		{`{"key1":"a text\nsecond line","other key":[1,2,3]}`,
 			map[string]interface{}{"key1": "a text\nsecond line", "other key": []interface{}{1.0, 2.0, 3.0}},
 			50},
+
+		{"[{}]", []interface{}{map[string]interface{}{}}, 4},
+		{"[{ }]", []interface{}{map[string]interface{}{}}, 5},
+		{"[{\n}]", []interface{}{map[string]interface{}{}}, 5},
+
+		{"[{},[],{}]", []interface{}{map[string]interface{}{}, []interface{}{}, map[string]interface{}{}}, 10},
 	}
 
 	for testID, test := range tests {
@@ -97,5 +110,62 @@ func TestJSON_compound(t *testing.T) {
 		if gotSize != test.expectSize {
 			t.Errorf("[test=%d] Expected [%v], got [%v]\n", testID, test.expectSize, gotSize)
 		}
+	}
+}
+
+const large = `{
+  "assignedLabels" : [
+    {
+      
+    }
+  ],
+  "mode" : "EXCLUSIVE",
+  "nodeDescription" : "the master Jenkins node",
+  "nodeName" : "",
+  "numExecutors" : 0,
+  "description" : "<a href=\"http://www.apache.org/\"><img src=\"https://www.apache.org/images/asf_logo_wide.gif\"></img></a>\r\n<p>\r\nThis is a public build and test server for <a href=\"http://projects.apache.org/\">projects</a> of the\r\n<a href=\"http://www.apache.org/\">Apache Software Foundation</a>. All times on this server are UTC.\r\n</p>\r\n<p>\r\nSee the <a href=\"http://wiki.apache.org/general/Hudson\">Jenkins wiki page</a> for more information\r\nabout this service.\r\n</p>"
+
+  "overallLoad" : {
+    
+  },
+  "primaryView" : {
+    "name" : "All",
+    "url" : "https://builds.apache.org/"
+  },
+  "quietingDown" : false,
+  "slaveAgentPort" : 0,
+  "unlabeledLoad" : {
+    
+  },
+  "useCrumbs" : true,
+  "useSecurity" : true,
+  "views" : [
+    {
+      "name" : "All",
+      "url" : "https://builds.apache.org/"
+    },
+    {
+      "name" : "CloudStack",
+      "url" : "https://builds.apache.org/view/CloudStack/"
+    },
+    {
+      "name" : "Hadoop",
+      "url" : "https://builds.apache.org/view/Hadoop/"
+    },
+    {
+      "name" : "Onami",
+      "url" : "https://builds.apache.org/view/Onami/"
+    }
+  ]
+}`
+
+func TestJSON_large(t *testing.T) {
+	// Test if the input is parsed and check length...
+	got, gotSize := JSON([]byte(large), nil)
+	if got == nil {
+		t.Errorf("[test=%d] Expected non-nil, got [%v]\n", 0, got)
+	}
+	if gotSize != len(large) {
+		t.Errorf("[test=%d] Expected [%v], got [%v]\n", 0, len(large), gotSize)
 	}
 }

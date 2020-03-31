@@ -1,9 +1,13 @@
 package parse
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"math"
 )
+
+// Spec: https://www.json.org/json-en.html
 
 var escaped [256]byte
 
@@ -17,6 +21,29 @@ func init() {
 	escaped['t'] = '\t'
 }
 
+const Comma = int(',')      // (golang) ints cannot be returned from JSON so use this as a marker.
+const Colon = int(':')      // (golang) ints cannot be returned from JSON so use this as a marker.
+const TermArray = int(']')  // (golang) ints cannot be returned from JSON so use this as a marker.
+const TermObject = int('}') // (golang) ints cannot be returned from JSON so use this as a marker.
+
+var ErrMissingComma = errors.New("Expected comma")
+var ErrMissingColon = errors.New("Expected colon")
+var ErrMissingString = errors.New("Expected string (key)")
+
+/*
+var (
+	win16be  = unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM)
+	utf16bom = unicode.BOMOverride(win16be.NewDecoder())
+)
+
+// return transform.NewReader(s, utf16bom)*/
+
+// TODO Proper handling of UTF8
+// TODO Compare to:
+// - https://github.com/buger/jsonparser
+// - github.com/francoispqt/gojay
+// - encoding/json
+// ...
 func JSON(b []byte, buffer []byte) (out interface{}, n int) {
 	l := len(b)
 
@@ -27,6 +54,17 @@ func JSON(b []byte, buffer []byte) (out interface{}, n int) {
 
 	if n >= l {
 		return io.EOF, n
+	}
+
+	switch b[n] {
+	case ',':
+		return Comma, n + 1
+	case ':':
+		return Colon, n + 1
+	case '}':
+		return TermObject, n + 1
+	case ']':
+		return TermArray, n + 1
 	}
 
 	// Number
@@ -78,13 +116,11 @@ func JSON(b []byte, buffer []byte) (out interface{}, n int) {
 		}
 	}
 
-	if n+2 > l {
-		return io.EOF, n + 2 // Both string, array and objects require at least two characters...
+	if n+1 > l { // string, array and objects require at least two characters...
+		return io.EOF, n
 	}
 
 	// String
-	// Returned values is UN-INTERPRETED - that is, any escaped characters are still the backslash followed by the char escaped.
-	// TODO Proper handling of UTF8
 	if b[n] == '"' {
 		n++
 		if buffer == nil {
@@ -112,52 +148,52 @@ func JSON(b []byte, buffer []byte) (out interface{}, n int) {
 	// Array
 	if b[n] == '[' {
 		array := make([]interface{}, 0)
-		for n++; n < l && b[n] != ']'; {
+		for n++; n < l; {
 			v, n0 := JSON(b[n:], buffer)
-			if n0 != 0 && v != nil {
+			n += n0
+			if v == TermArray {
+				break
+			}
+			if v != Comma {
 				array = append(array, v)
 			}
-
-			n += n0
-			if b[n] == ',' {
-				n++
-			}
 		}
-		return array, n + 1
+		return array, n
 	}
 
+	// Object
 	if b[n] == '{' {
 		obj := make(map[string]interface{})
-		for n++; n < l && b[n] != '}'; {
-			vKey, n0 := JSON(b[n:], buffer)
+		for n++; n < l; {
+			v, n0 := JSON(b[n:], buffer)
 			n += n0
-
-			key, ok := vKey.(string)
-			if !ok && b[n] == ',' {
-				n++
-				vKey, n0 = JSON(b[n:], buffer)
+			if v == TermObject {
+				break
+			}
+			if v == Comma {
+				v, n0 = JSON(b[n:], buffer)
 				n += n0
-				key, ok = vKey.(string)
 			}
 
+			key, ok := v.(string)
 			if !ok {
-				return obj, n
+				fmt.Printf("v = %v\n", v)
+				return ErrMissingString, n
 			}
 
-			_, n0 = JSON(b[n:], buffer)
+			v, n0 = JSON(b[n:], buffer)
 			n += n0
-			if b[n] != ':' {
-				return obj, n
+			if v != Colon {
+				return ErrMissingColon, n // Error state, actually
 			}
 
-			n++
 			obj[key], n0 = JSON(b[n:], buffer)
 			n += n0
 		}
-		return obj, n + 1
+		return obj, n
 	}
-	// Object
-	return
+
+	return io.EOF, n
 }
 
 func JSONEqual(a, b interface{}) bool {
@@ -170,6 +206,9 @@ func JSONEqual(a, b interface{}) bool {
 		return v == b.(bool)
 	case []interface{}:
 		w := b.([]interface{})
+		if len(w) != len(v) {
+			return false
+		}
 		for i, v0 := range v {
 			if !JSONEqual(v0, w[i]) {
 				return false
@@ -187,3 +226,36 @@ func JSONEqual(a, b interface{}) bool {
 	}
 	return true
 }
+
+/*
+func JSONUnmarshal(source, target interface{}) (err error) {
+	switch v := source.(type) {
+	case float64:
+		// return v == b.(float64)
+	case string:
+		// return v == b.(string)
+	case bool:
+		// return v == b.(bool)
+	case []interface{}:
+		// w := b.([]interface{})
+		// if len(w) != len(v) {
+		// 	return false
+		// }
+		// for i, v0 := range v {
+		// 	if !JSONEqual(v0, w[i]) {
+		// 		return false
+		// 	}
+		// }
+	case map[string]interface{}:
+		// w := b.(map[string]interface{})
+		// for key, v0 := range v {
+		// 	if !JSONEqual(v0, w[key]) {
+		// 		return false
+		// 	}
+		// }
+	default:
+		// return b == nil
+	}
+	// return true
+}
+*/
