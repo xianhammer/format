@@ -1,6 +1,10 @@
 package parse
 
 import (
+	"bytes"
+	"io"
+	"io/ioutil"
+	"path/filepath"
 	"testing"
 )
 
@@ -13,20 +17,29 @@ func TestJSON_number(t *testing.T) {
 	}{
 		{"0", float64(0), 1}, // JSON Numbers are float64
 		{"1", float64(1), 1},
+		{"-1", float64(-1), 2},
 		{"123", float64(123), 3},
 		{"123a", float64(123), 3},
 
 		{"123.0", float64(123.0), 5},
 		{"123.33", float64(123.33), 6},
 		{"123.66", float64(123.66), 6},
+		{"-123.66", float64(-123.66), 7},
 
 		{"123e-2", float64(1.23), 6},
 		{"123e+2", float64(12300), 6},
 		{"123e2", float64(12300), 5},
+
+		{"-123e-2", float64(-1.23), 7},
+		{"-123e+2", float64(-12300), 7},
+		{"-123e2", float64(-12300), 6},
 	}
 
 	for testID, test := range tests {
-		got, gotSize := JSON([]byte(test.input), nil)
+		got, gotSize, err := JSON([]byte(test.input), nil)
+		if err != nil {
+			t.Errorf("[test=%d] Expected error [%v], got [%v]\n", testID, nil, err)
+		}
 		if !JSONEqual(got, test.expect) {
 			t.Errorf("[test=%d] Expected [%v], got [%v]\n", testID, test.expect, got)
 		}
@@ -42,25 +55,36 @@ func TestJSON_simple(t *testing.T) {
 		input      string
 		expect     interface{}
 		expectSize int
+		expectErr  error
 	}{
-		{"true", true, 4},
-		{"false", false, 5},
-		{"null", nil, 4},
-		{`"some text"`, "some text", 2 + 9},
-		{`"some\ntext"`, "some\ntext", 2 + 9 + 1},
-		{`"some\ttext"`, "some\ttext", 2 + 9 + 1},
-		{`"some\"text"`, "some\"text", 2 + 9 + 1},
+		{"true", true, 4, nil},
+		{"false", false, 5, nil},
+		{"null", nil, 4, nil},
 
-		{"trueZ", true, 4},
-		{"falseZ", false, 5},
-		{"nullZ", nil, 4},
-		{`"some text"z`, "some text", 2 + 9},
+		{"trueZ", true, 4, nil},
+		{"falseZ", false, 5, nil},
+		{"nullZ", nil, 4, nil},
+		{"tru", nil, 3, io.EOF},
+		{"fals", nil, 4, io.EOF},
+		{"nul", nil, 3, io.EOF},
 
-		{`"<a href=\"http://www.apache.org/\">"`, `<a href="http://www.apache.org/">`, 2 + 35},
+		{`"some text"`, "some text", 2 + 9, nil},
+		{`"some\ntext"`, "some\ntext", 2 + 9 + 1, nil},
+		{`"some\ttext"`, "some\ttext", 2 + 9 + 1, nil},
+		{`"some\"text"`, "some\"text", 2 + 9 + 1, nil},
+		{`"some text"z`, "some text", 2 + 9, nil},
+		{`"some text"z`, "some text", 2 + 9, nil},
+
+		{`"<a href=\"http://www.apache.org/\">"`, `<a href="http://www.apache.org/">`, 2 + 35, nil},
+		{`"<a href=\"http://www.apache.org/\"><img src=\"https://www.apache.org/images/asf_logo_wide.gif\">"`, `<a href="http://www.apache.org/"><img src="https://www.apache.org/images/asf_logo_wide.gif">`, 2 + 96, nil},
 	}
 
 	for testID, test := range tests {
-		got, gotSize := JSON([]byte(test.input), nil)
+		got, gotSize, err := JSON([]byte(test.input), nil)
+		if err != test.expectErr {
+			t.Errorf("[test=%d] Expected error [%v], got [%v]\n", testID, test.expectErr, err)
+		}
+
 		if !JSONEqual(got, test.expect) {
 			t.Errorf("[test=%d] Expected [%v], got [%v]\n", testID, test.expect, got)
 		}
@@ -68,6 +92,16 @@ func TestJSON_simple(t *testing.T) {
 			t.Errorf("[test=%d] Expected [%v], got [%v]\n", testID, test.expectSize, gotSize)
 		}
 	}
+}
+
+var complex = `{
+
+  "nodeName" : "",
+  "description" : "<a href=\"http://www.apache.org/\"><img src=\"https://www.apache.org/images/asf_logo_wide.gif\"></img></a>\r\n<p>\r\nThis is a public build and test server for <a href=\"http://projects.apache.org/\">projects</a> of the\r\n<a href=\"http://www.apache.org/\">Apache Software Foundation</a>. All times on this server are UTC.\r\n</p>\r\n<p>\r\nSee the <a href=\"http://wiki.apache.org/general/Hudson\">Jenkins wiki page</a> for more information\r\nabout this service.\r\n</p>"
+}`
+var complexExpect = map[string]interface{}{
+	"nodeName":    "",
+	"description": "<a href=\"http://www.apache.org/\"><img src=\"https://www.apache.org/images/asf_logo_wide.gif\"></img></a>\r\n<p>\r\nThis is a public build and test server for <a href=\"http://projects.apache.org/\">projects</a> of the\r\n<a href=\"http://www.apache.org/\">Apache Software Foundation</a>. All times on this server are UTC.\r\n</p>\r\n<p>\r\nSee the <a href=\"http://wiki.apache.org/general/Hudson\">Jenkins wiki page</a> for more information\r\nabout this service.\r\n</p>",
 }
 
 func TestJSON_compound(t *testing.T) {
@@ -84,6 +118,8 @@ func TestJSON_compound(t *testing.T) {
 		{"[null,null]", []interface{}{nil, nil}, 11},
 		{"[true,1 ,  \"string\"]", []interface{}{true, 1.0, "string"}, 20},
 		{"[true,[1 ,  \"string\"]]", []interface{}{true, []interface{}{1.0, "string"}}, 22},
+		{"[1,2,3]\n", []interface{}{1.0, 2.0, 3.0}, 7},
+		{"[1,2,3]\r", []interface{}{1.0, 2.0, 3.0}, 7},
 
 		{"{}", map[string]interface{}{}, 2},
 		{"{ }", map[string]interface{}{}, 3},
@@ -91,6 +127,13 @@ func TestJSON_compound(t *testing.T) {
 		{"{\n}", map[string]interface{}{}, 3},
 		{`{"a":1}`, map[string]interface{}{"a": 1.0}, 7},
 		{`{"a":1,"b":2}`, map[string]interface{}{"a": 1.0, "b": 2.0}, 13},
+		{`{"a":1,"b":2}` + "\n", map[string]interface{}{"a": 1.0, "b": 2.0}, 13},
+		{`{"a":1,"b":2}` + "\r", map[string]interface{}{"a": 1.0, "b": 2.0}, 13},
+
+		{`{"a":-1}`, map[string]interface{}{"a": -1.0}, 8},
+		{`{"a":-1,"b":2}`, map[string]interface{}{"a": -1.0, "b": 2.0}, 14},
+		{`{"a":1,"b":-2}`, map[string]interface{}{"a": 1.0, "b": -2.0}, 14},
+
 		{`{"key1":"a text\nsecond line","other key":[1,2,3]}`,
 			map[string]interface{}{"key1": "a text\nsecond line", "other key": []interface{}{1.0, 2.0, 3.0}},
 			50},
@@ -100,10 +143,19 @@ func TestJSON_compound(t *testing.T) {
 		{"[{\n}]", []interface{}{map[string]interface{}{}}, 5},
 
 		{"[{},[],{}]", []interface{}{map[string]interface{}{}, []interface{}{}, map[string]interface{}{}}, 10},
+
+		{"{\n\"d\"\n:\n[\n{\n}\n]\n}\n", map[string]interface{}{
+			"d": []interface{}{map[string]interface{}{}},
+		}, 17},
+
+		{complex, complexExpect, 517},
 	}
 
 	for testID, test := range tests {
-		got, gotSize := JSON([]byte(test.input), nil)
+		got, gotSize, err := JSON([]byte(test.input), nil)
+		if err != nil {
+			t.Errorf("[test=%d] Expected error [%v], got [%v]\n", testID, nil, err)
+		}
 		if !JSONEqual(got, test.expect) {
 			t.Errorf("[test=%d] Expected [%v], got [%v]\n", testID, test.expect, got)
 		}
@@ -113,59 +165,46 @@ func TestJSON_compound(t *testing.T) {
 	}
 }
 
-const large = `{
-  "assignedLabels" : [
-    {
-      
-    }
-  ],
-  "mode" : "EXCLUSIVE",
-  "nodeDescription" : "the master Jenkins node",
-  "nodeName" : "",
-  "numExecutors" : 0,
-  "description" : "<a href=\"http://www.apache.org/\"><img src=\"https://www.apache.org/images/asf_logo_wide.gif\"></img></a>\r\n<p>\r\nThis is a public build and test server for <a href=\"http://projects.apache.org/\">projects</a> of the\r\n<a href=\"http://www.apache.org/\">Apache Software Foundation</a>. All times on this server are UTC.\r\n</p>\r\n<p>\r\nSee the <a href=\"http://wiki.apache.org/general/Hudson\">Jenkins wiki page</a> for more information\r\nabout this service.\r\n</p>"
-
-  "overallLoad" : {
-    
-  },
-  "primaryView" : {
-    "name" : "All",
-    "url" : "https://builds.apache.org/"
-  },
-  "quietingDown" : false,
-  "slaveAgentPort" : 0,
-  "unlabeledLoad" : {
-    
-  },
-  "useCrumbs" : true,
-  "useSecurity" : true,
-  "views" : [
-    {
-      "name" : "All",
-      "url" : "https://builds.apache.org/"
-    },
-    {
-      "name" : "CloudStack",
-      "url" : "https://builds.apache.org/view/CloudStack/"
-    },
-    {
-      "name" : "Hadoop",
-      "url" : "https://builds.apache.org/view/Hadoop/"
-    },
-    {
-      "name" : "Onami",
-      "url" : "https://builds.apache.org/view/Onami/"
-    }
-  ]
-}`
-
 func TestJSON_large(t *testing.T) {
-	// Test if the input is parsed and check length...
-	got, gotSize := JSON([]byte(large), nil)
-	if got == nil {
-		t.Errorf("[test=%d] Expected non-nil, got [%v]\n", 0, got)
+	tests := []struct {
+		filename  string
+		expectErr error
+	}{
+		{"apache_builds", nil},
+		{"canada", nil},
+		{"citm_catalog", nil},
+		{"github_events", nil},
+		{"gsoc-2018", nil},
+		{"instruments", nil},
+		{"marine_ik", nil},
+		{"mesh", nil},
+		{"mesh.pretty", nil},
+		{"numbers", nil},
+		{"random", nil},
+		{"twitter", nil},
+		{"twitterescaped", nil},
+		{"update-center", nil},
 	}
-	if gotSize != len(large) {
-		t.Errorf("[test=%d] Expected [%v], got [%v]\n", 0, len(large), gotSize)
+
+	for testID, test := range tests {
+		file := filepath.Join("testdata", "json0", test.filename+"-utf8.json")
+		src, err := ioutil.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		srcLen := len(bytes.TrimSpace(src))
+		got, gotSize, err := JSON(src, nil)
+
+		// got, gotSize, err := JSON(src, nil)
+		if err != nil && err != io.EOF {
+			t.Errorf("[test=%d] Expected error [%v], got [%v]\n", testID, nil, err)
+		}
+		if got == nil {
+			t.Errorf("[test=%d] Expected non-nil, got [%v]\n", testID, got)
+		}
+		if gotSize != srcLen {
+			t.Errorf("[test=%d] Expected [%v], got [%v]\n", testID, srcLen, gotSize)
+		}
 	}
 }

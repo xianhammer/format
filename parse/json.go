@@ -1,15 +1,28 @@
 package parse
 
 import (
+	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"math"
 )
 
 // Spec: https://www.json.org/json-en.html
 
-var escaped [256]byte
+var (
+	escaped [256]byte
+
+	keywordTrue  = []byte("true")
+	keywordFalse = []byte("false")
+	keywordNull  = []byte("null")
+
+	Terminal = errors.New("Array or object terminal")
+
+	// ErrMissingComma    = errors.New("Expected comma")
+	ErrMissingColon    = errors.New("Expected colon")
+	ErrMissingString   = errors.New("Expected string (key)")
+	ErrIllegalOperator = errors.New("Illegal operator")
+)
 
 func init() {
 	escaped['"'] = '"'
@@ -21,18 +34,9 @@ func init() {
 	escaped['t'] = '\t'
 }
 
-const Comma = int(',')      // (golang) ints cannot be returned from JSON so use this as a marker.
-const Colon = int(':')      // (golang) ints cannot be returned from JSON so use this as a marker.
-const TermArray = int(']')  // (golang) ints cannot be returned from JSON so use this as a marker.
-const TermObject = int('}') // (golang) ints cannot be returned from JSON so use this as a marker.
-
-var ErrMissingComma = errors.New("Expected comma")
-var ErrMissingColon = errors.New("Expected colon")
-var ErrMissingString = errors.New("Expected string (key)")
-
 /*
 var (
-	win16be  = unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM)
+	win16be  = unicode.UTF16(unicode.BigEndian, unicode.IgnoreBOM)
 	utf16bom = unicode.BOMOverride(win16be.NewDecoder())
 )
 
@@ -44,156 +48,196 @@ var (
 // - github.com/francoispqt/gojay
 // - encoding/json
 // ...
-func JSON(b []byte, buffer []byte) (out interface{}, n int) {
+func JSON(b []byte, buffer []byte) (out interface{}, n int, err error) {
+	array := make([]interface{}, 32)
+	if buffer == nil {
+		buffer = b[:]
+	}
+	return internalJSON(b, buffer, array)
+}
+
+func internalJSON(b []byte, buffer []byte, array []interface{}) (out interface{}, n int, err error) {
 	l := len(b)
 
 	// Whitespaces
-	for ; n < l && b[n] <= 32 && (b[n] == 0x09 || b[n] == 0x0A || b[n] == 0x0D || b[n] == 0x20); n++ {
-		// out = byte(0x20) // If n>=l condition below is true, a proper return values is needed. Here char(32) is returned.
-	}
+	switch b[n] {
+	case 0x09, 0x0A, 0x0D, 0x20:
+		for n++; n < l; n++ {
+			if b[n] > 0x20 || (b[n] != 0x09 && b[n] != 0x0A && b[n] != 0x0D && b[n] != 0x20) {
+				break
+			}
+		}
 
-	if n >= l {
-		return io.EOF, n
+		if n >= l { // Fast "fail"
+			return nil, n, nil
+		}
 	}
 
 	switch b[n] {
-	case ',':
-		return Comma, n + 1
-	case ':':
-		return Colon, n + 1
-	case '}':
-		return TermObject, n + 1
-	case ']':
-		return TermArray, n + 1
+	case '}', ']':
+		return nil, n, Terminal
+	case 't':
+		if bytes.Equal(b[n:n+4], keywordTrue) {
+			return true, n + 4, nil
+		}
+	case 'n':
+		if bytes.Equal(b[n:n+4], keywordNull) {
+			return nil, n + 4, nil
+		}
+	case 'f':
+		if bytes.Equal(b[n:n+5], keywordFalse) {
+			return false, n + 5, nil
+		}
 	}
 
-	// Number
-	if (b[n] - '0') < 10 {
-		v, n0 := Decimal(b[n:])
-		n += n0
-
-		var number = float64(v)
-		if n >= l {
-			return number, n
-		}
-
-		if n+1 < l && b[n] == '.' {
-			fp, n0 := Decimal(b[n+1:])
-			n += n0 + 1
-			number += float64(fp) * math.Pow10(-n0)
-		}
-
-		if n < l && (b[n]&0xDF) == 'E' {
+	// Number - 0 prefix is accepted in this parser. Using '1' in condiftion below ban the 0-prefix.
+	if isdigit := (b[n] - '0') < 10; isdigit || (b[n]&0xF9) == 0x29 { // Second test is actually a bit too inclusive, weed out in body.
+		n0, negNum := n, !isdigit && b[n] == '-'
+		if negNum || b[n] == '+' {
 			n++
-			negative := b[n] == '-'
-			if negative || b[n] == '+' {
+		}
+
+		var number float64
+		for ; n < l && (b[n]-'0') < 10; n++ {
+			number = (number * 10.0) + float64(b[n]&0x0F)
+		}
+
+		if n < l {
+			if b[n] == '.' {
+				var fp float64
+				var n0 int
+				for n++; n < l && (b[n]-'0') < 10; n++ {
+					fp = (fp * 10.0) + float64(b[n]&0x0F)
+					n0++
+				}
+				number += fp * math.Pow10(-n0)
+			}
+
+			if n < l && (b[n]&0xDF) == 'E' {
 				n++
+				negExp := b[n] == '-'
+				if negExp || b[n] == '+' {
+					n++
+				}
+
+				var exp0 int
+				for ; n < l && (b[n]-'0') < 10; n++ {
+					exp0 = (exp0 * 10) + int(b[n]&0x0F)
+				}
+
+				if negExp {
+					number *= math.Pow10(-exp0)
+				} else {
+					number *= math.Pow10(exp0)
+				}
 			}
-
-			exp0, n0 := Decimal(b[n:])
-			n += n0
-
-			if negative {
-				number *= math.Pow10(-int(exp0))
-			} else {
-				number *= math.Pow10(int(exp0))
-			}
 		}
 
-		return number, n
-	}
-
-	// Keywords: true, false, null
-	if n+4 <= l {
-		if b[n] == 't' && b[n+1] == 'r' && b[n+2] == 'u' && b[n+3] == 'e' { // true
-			return true, n + 4
+		if negNum {
+			number = -number
+		} else if n0 == n {
+			return nil, n, ErrIllegalOperator
 		}
-		if b[n] == 'n' && b[n+1] == 'u' && b[n+2] == 'l' && b[n+3] == 'l' { // null
-			return nil, n + 4
-		}
-		if n+5 <= l && b[n] == 'f' && b[n+1] == 'a' && b[n+2] == 'l' && b[n+3] == 's' && b[n+4] == 'e' { // false
-			return false, n + 5
-		}
-	}
-
-	if n+1 > l { // string, array and objects require at least two characters...
-		return io.EOF, n
+		return number, n, nil
 	}
 
 	// String
 	if b[n] == '"' {
-		n++
-		if buffer == nil {
-			buffer = b[n:]
-		}
-
 		i := 0
-		for ; n < l && b[n] != '"'; n++ {
-			if b[n] == '\\' {
-				if n++; b[n] == 'u' {
-					v, n0 := Hex(b[n : n+4])
-					n += n0
-					buffer[i] = byte(v)
-				} else {
-					buffer[i] = escaped[b[n]]
-				}
-			} else {
+		for n++; n < l && b[n] != '"'; n++ {
+			if b[n] != '\\' {
 				buffer[i] = b[n]
+			} else if n++; b[n] == 'u' {
+				v, n0 := Hex(b[n : n+4]) // TODO Faster convert?
+				n += n0
+				buffer[i] = byte(v) // TODO rune(v)
+			} else {
+				buffer[i] = escaped[b[n]]
 			}
 			i++
 		}
-		return string(buffer[:i]), n + 1
+		return string(buffer[:i]), n + 1, nil
 	}
 
 	// Array
 	if b[n] == '[' {
-		array := make([]interface{}, 0)
-		for n++; n < l; {
-			v, n0 := JSON(b[n:], buffer)
+		var output []interface{}
+		var n0 int
+		idx := 0
+		for n++; n < l && b[n] != ']'; {
+			array[idx], n0, err = JSON(b[n:], buffer)
 			n += n0
-			if v == TermArray {
-				break
+			if err != nil {
+				if err == Terminal {
+					break
+				}
+				return nil, n, err
 			}
-			if v != Comma {
-				array = append(array, v)
+
+			if idx++; idx == len(array) {
+				output = append(output, array...)
+				idx = 0
+			}
+
+			for ; n < l && b[n] <= 32 && (b[n] == 0x09 || b[n] == 0x0A || b[n] == 0x0D || b[n] == 0x20); n++ {
+			}
+
+			if n < l && b[n] != ']' {
+				n++
 			}
 		}
-		return array, n
+		if idx > 0 {
+			output = append(output, array[:idx]...)
+		}
+		return output, n + 1, nil
 	}
 
 	// Object
 	if b[n] == '{' {
 		obj := make(map[string]interface{})
-		for n++; n < l; {
-			v, n0 := JSON(b[n:], buffer)
+		for n++; n < l && b[n] != '}'; {
+			v, n0, err := JSON(b[n:], buffer)
 			n += n0
-			if v == TermObject {
-				break
-			}
-			if v == Comma {
-				v, n0 = JSON(b[n:], buffer)
-				n += n0
+			if err != nil {
+				if err == Terminal {
+					break
+				}
+				return nil, n, err
 			}
 
 			key, ok := v.(string)
 			if !ok {
-				fmt.Printf("v = %v\n", v)
-				return ErrMissingString, n
+				return nil, n, ErrMissingString
 			}
 
-			v, n0 = JSON(b[n:], buffer)
+			for ; n < l && b[n] <= 32 && (b[n] == 0x09 || b[n] == 0x0A || b[n] == 0x0D || b[n] == 0x20); n++ {
+			}
+			if n < l && b[n] != ':' {
+				return nil, l, ErrMissingColon
+			}
+			n++
+
+			obj[key], n0, err = JSON(b[n:], buffer)
 			n += n0
-			if v != Colon {
-				return ErrMissingColon, n // Error state, actually
+			if err != nil {
+				delete(obj, key)
+				return nil, n, err
 			}
 
-			obj[key], n0 = JSON(b[n:], buffer)
-			n += n0
+			for ; n < l && b[n] <= 32 && (b[n] == 0x09 || b[n] == 0x0A || b[n] == 0x0D || b[n] == 0x20); n++ {
+			}
+
+			if n < l && b[n] != '}' {
+				if b[n] != ',' {
+					return nil, l, Terminal
+				}
+				n++
+			}
 		}
-		return obj, n
+		return obj, n + 1, nil
 	}
 
-	return io.EOF, n
+	return nil, l, io.EOF
 }
 
 func JSONEqual(a, b interface{}) bool {
