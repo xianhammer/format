@@ -1,4 +1,4 @@
-package parse
+package json
 
 import (
 	"bytes"
@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-func TestJSON_number(t *testing.T) {
-	// func JSON(b []byte) (i uint64, n int)
+func TestParse_number(t *testing.T) {
+	// func Parse(b []byte) (i uint64, n int)
 	tests := []struct {
 		input      string
 		expect     interface{}
@@ -36,11 +36,11 @@ func TestJSON_number(t *testing.T) {
 	}
 
 	for testID, test := range tests {
-		got, gotSize, err := JSON([]byte(test.input), nil)
+		got, gotSize, err := Parse([]byte(test.input), nil)
 		if err != nil {
 			t.Errorf("[test=%d] Expected error [%v], got [%v]\n", testID, nil, err)
 		}
-		if !JSONEqual(got, test.expect) {
+		if !Equal(got, test.expect) {
 			t.Errorf("[test=%d] Expected [%v], got [%v]\n", testID, test.expect, got)
 		}
 		if gotSize != test.expectSize {
@@ -49,8 +49,8 @@ func TestJSON_number(t *testing.T) {
 	}
 }
 
-func TestJSON_simple(t *testing.T) {
-	// func JSON(b []byte) (i uint64, n int)
+func TestParse_simple(t *testing.T) {
+	// func Parse(b []byte) (i uint64, n int)
 	tests := []struct {
 		input      string
 		expect     interface{}
@@ -80,12 +80,12 @@ func TestJSON_simple(t *testing.T) {
 	}
 
 	for testID, test := range tests {
-		got, gotSize, err := JSON([]byte(test.input), nil)
+		got, gotSize, err := Parse([]byte(test.input), nil)
 		if err != test.expectErr {
 			t.Errorf("[test=%d] Expected error [%v], got [%v]\n", testID, test.expectErr, err)
 		}
 
-		if !JSONEqual(got, test.expect) {
+		if !Equal(got, test.expect) {
 			t.Errorf("[test=%d] Expected [%v], got [%v]\n", testID, test.expect, got)
 		}
 		if gotSize != test.expectSize {
@@ -104,7 +104,7 @@ var complexExpect = map[string]interface{}{
 	"description": "<a href=\"http://www.apache.org/\"><img src=\"https://www.apache.org/images/asf_logo_wide.gif\"></img></a>\r\n<p>\r\nThis is a public build and test server for <a href=\"http://projects.apache.org/\">projects</a> of the\r\n<a href=\"http://www.apache.org/\">Apache Software Foundation</a>. All times on this server are UTC.\r\n</p>\r\n<p>\r\nSee the <a href=\"http://wiki.apache.org/general/Hudson\">Jenkins wiki page</a> for more information\r\nabout this service.\r\n</p>",
 }
 
-func TestJSON_compound(t *testing.T) {
+func TestParse_compound(t *testing.T) {
 	// func JSON(b []byte) (i uint64, n int)
 	tests := []struct {
 		input      string
@@ -117,6 +117,7 @@ func TestJSON_compound(t *testing.T) {
 		{"[1,2]", []interface{}{1.0, 2.0}, 5},
 		{"[null,null]", []interface{}{nil, nil}, 11},
 		{"[true,1 ,  \"string\"]", []interface{}{true, 1.0, "string"}, 20},
+
 		{"[true,[1 ,  \"string\"]]", []interface{}{true, []interface{}{1.0, "string"}}, 22},
 		{"[1,2,3]\n", []interface{}{1.0, 2.0, 3.0}, 7},
 		{"[1,2,3]\r", []interface{}{1.0, 2.0, 3.0}, 7},
@@ -152,11 +153,11 @@ func TestJSON_compound(t *testing.T) {
 	}
 
 	for testID, test := range tests {
-		got, gotSize, err := JSON([]byte(test.input), nil)
+		got, gotSize, err := Parse([]byte(test.input), nil)
 		if err != nil {
 			t.Errorf("[test=%d] Expected error [%v], got [%v]\n", testID, nil, err)
 		}
-		if !JSONEqual(got, test.expect) {
+		if !Equal(got, test.expect) {
 			t.Errorf("[test=%d] Expected [%v], got [%v]\n", testID, test.expect, got)
 		}
 		if gotSize != test.expectSize {
@@ -165,7 +166,7 @@ func TestJSON_compound(t *testing.T) {
 	}
 }
 
-func TestJSON_large(t *testing.T) {
+func TestParse_large(t *testing.T) {
 	tests := []struct {
 		filename  string
 		expectErr error
@@ -194,9 +195,7 @@ func TestJSON_large(t *testing.T) {
 		}
 
 		srcLen := len(bytes.TrimSpace(src))
-		got, gotSize, err := JSON(src, nil)
-
-		// got, gotSize, err := JSON(src, nil)
+		got, gotSize, err := Parse(src, nil)
 		if err != nil && err != io.EOF {
 			t.Errorf("[test=%d] Expected error [%v], got [%v]\n", testID, nil, err)
 		}

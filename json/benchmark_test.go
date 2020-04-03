@@ -1,4 +1,4 @@
-package parse
+package json
 
 import (
 	"bytes"
@@ -73,18 +73,17 @@ func readFile(b *testing.B, filename string) (src []byte, srcLen int) {
 	srcLen = len(bytes.TrimSpace(src))
 
 	b.SetBytes(int64(srcLen))
-	b.ReportAllocs()
-	b.ResetTimer()
 
 	return
 }
 
 func benchmarkFromFile(b *testing.B, filename string) {
 	src, srcLen := readFile(b, filename)
-
 	buffer := make([]byte, srcLen) // Needed, since giving JSON a nil argument will corrupt the input after first loop.
+	b.ReportAllocs()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		got, _, err := JSON(src, buffer)
+		got, _, err := Parse(src, buffer)
 		if err != nil && err != io.EOF {
 			b.Fatal(err)
 		}
@@ -100,7 +99,8 @@ func benchmarkFromFile(b *testing.B, filename string) {
 
 func stdBenchmarkFromFile(b *testing.B, filename string) {
 	src, _ := readFile(b, filename)
-
+	b.ReportAllocs()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var got interface{}
 		err := json.Unmarshal(src, &got)

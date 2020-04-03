@@ -1,10 +1,12 @@
-package parse
+package json
 
 import (
 	"bytes"
 	"errors"
 	"io"
 	"math"
+
+	"github.com/xianhammer/format/parse"
 )
 
 // Spec: https://www.json.org/json-en.html
@@ -34,29 +36,23 @@ func init() {
 	escaped['t'] = '\t'
 }
 
+// TODO Proper handling of UTF8
 /*
 var (
 	win16be  = unicode.UTF16(unicode.BigEndian, unicode.IgnoreBOM)
 	utf16bom = unicode.BOMOverride(win16be.NewDecoder())
 )
+... transform.NewReader(s, utf16bom)
+*/
 
-// return transform.NewReader(s, utf16bom)*/
-
-// TODO Proper handling of UTF8
-// TODO Compare to:
-// - https://github.com/buger/jsonparser
-// - github.com/francoispqt/gojay
-// - encoding/json
-// ...
-func JSON(b []byte, buffer []byte) (out interface{}, n int, err error) {
-	array := make([]interface{}, 32)
+func Parse(b []byte, buffer []byte) (out interface{}, n int, err error) {
 	if buffer == nil {
 		buffer = b[:]
 	}
-	return internalJSON(b, buffer, array)
+	return internalParse(b, buffer)
 }
 
-func internalJSON(b []byte, buffer []byte, array []interface{}) (out interface{}, n int, err error) {
+func internalParse(b []byte, buffer []byte) (out interface{}, n int, err error) {
 	l := len(b)
 
 	// Whitespaces
@@ -148,7 +144,7 @@ func internalJSON(b []byte, buffer []byte, array []interface{}) (out interface{}
 			if b[n] != '\\' {
 				buffer[i] = b[n]
 			} else if n++; b[n] == 'u' {
-				v, n0 := Hex(b[n : n+4]) // TODO Faster convert?
+				v, n0 := parse.Hex(b[n : n+4]) // TODO Faster convert?
 				n += n0
 				buffer[i] = byte(v) // TODO rune(v)
 			} else {
@@ -164,8 +160,11 @@ func internalJSON(b []byte, buffer []byte, array []interface{}) (out interface{}
 		var output []interface{}
 		var n0 int
 		idx := 0
+		array := make([]interface{}, 32)
 		for n++; n < l && b[n] != ']'; {
-			array[idx], n0, err = JSON(b[n:], buffer)
+			array[idx], n0, err = internalParse(b[n:], buffer)
+			// fmt.Printf("true: [%v]\n", b[n:n+4])
+
 			n += n0
 			if err != nil {
 				if err == Terminal {
@@ -196,7 +195,7 @@ func internalJSON(b []byte, buffer []byte, array []interface{}) (out interface{}
 	if b[n] == '{' {
 		obj := make(map[string]interface{})
 		for n++; n < l && b[n] != '}'; {
-			v, n0, err := JSON(b[n:], buffer)
+			v, n0, err := internalParse(b[n:], buffer)
 			n += n0
 			if err != nil {
 				if err == Terminal {
@@ -217,7 +216,7 @@ func internalJSON(b []byte, buffer []byte, array []interface{}) (out interface{}
 			}
 			n++
 
-			obj[key], n0, err = JSON(b[n:], buffer)
+			obj[key], n0, err = internalParse(b[n:], buffer)
 			n += n0
 			if err != nil {
 				delete(obj, key)
@@ -239,67 +238,3 @@ func internalJSON(b []byte, buffer []byte, array []interface{}) (out interface{}
 
 	return nil, l, io.EOF
 }
-
-func JSONEqual(a, b interface{}) bool {
-	switch v := a.(type) {
-	case float64:
-		return v == b.(float64)
-	case string:
-		return v == b.(string)
-	case bool:
-		return v == b.(bool)
-	case []interface{}:
-		w := b.([]interface{})
-		if len(w) != len(v) {
-			return false
-		}
-		for i, v0 := range v {
-			if !JSONEqual(v0, w[i]) {
-				return false
-			}
-		}
-	case map[string]interface{}:
-		w := b.(map[string]interface{})
-		for key, v0 := range v {
-			if !JSONEqual(v0, w[key]) {
-				return false
-			}
-		}
-	default:
-		return b == nil
-	}
-	return true
-}
-
-/*
-func JSONUnmarshal(source, target interface{}) (err error) {
-	switch v := source.(type) {
-	case float64:
-		// return v == b.(float64)
-	case string:
-		// return v == b.(string)
-	case bool:
-		// return v == b.(bool)
-	case []interface{}:
-		// w := b.([]interface{})
-		// if len(w) != len(v) {
-		// 	return false
-		// }
-		// for i, v0 := range v {
-		// 	if !JSONEqual(v0, w[i]) {
-		// 		return false
-		// 	}
-		// }
-	case map[string]interface{}:
-		// w := b.(map[string]interface{})
-		// for key, v0 := range v {
-		// 	if !JSONEqual(v0, w[key]) {
-		// 		return false
-		// 	}
-		// }
-	default:
-		// return b == nil
-	}
-	// return true
-}
-*/
