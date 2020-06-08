@@ -8,6 +8,45 @@ import (
 	"testing"
 )
 
+func TestParse_error(t *testing.T) {
+	// func Parse(b []byte) (i uint64, n int)
+	tests := []struct {
+		input      string
+		expect     interface{}
+		expectSize int
+		expectErr  error
+	}{
+		{`[`, nil, 1, Terminal},
+		{`[1`, nil, 2, Terminal},
+		{`[1,`, nil, 3, Terminal},
+		{`[a,`, nil, 3, Terminal},
+
+		{`{`, nil, 1, Terminal},
+		{`{1`, nil, 2, ErrMissingString},
+		{`{a`, nil, 2, ErrMissingString},
+		{`{"a"`, nil, 4, ErrMissingString},
+		{`{"a":`, nil, 5, ErrMissingColon},
+		{`{"a":1`, nil, 6, Terminal},
+		{`{"a":a`, nil, 6, Terminal},
+		{`{"a":1  1`, nil, 9, Terminal},
+		{`{"a":1,`, nil, 7, Terminal},
+	}
+
+	for testID, test := range tests {
+		got, gotSize, err := Parse([]byte(test.input), nil)
+		if err != test.expectErr {
+			t.Errorf("[test=%d] Expected error [%v], got [%v]\n", testID, test.expectErr, err)
+		}
+
+		if !Equal(got, test.expect) {
+			t.Errorf("[test=%d] Expected [%v], got [%v]\n", testID, test.expect, got)
+		}
+		if gotSize != test.expectSize {
+			t.Errorf("[test=%d] Expected [%v], got [%v]\n", testID, test.expectSize, gotSize)
+		}
+	}
+}
+
 func TestParse_number(t *testing.T) {
 	// func Parse(b []byte) (i uint64, n int)
 	tests := []struct {
@@ -67,6 +106,8 @@ func TestParse_simple(t *testing.T) {
 		{"tru", nil, 3, io.EOF},
 		{"fals", nil, 4, io.EOF},
 		{"nul", nil, 3, io.EOF},
+
+		{`   	   `, nil, 7, nil}, // Just spaces & TABs
 
 		{`"some text"`, "some text", 2 + 9, nil},
 		{`"some\ntext"`, "some\ntext", 2 + 9 + 1, nil},
@@ -171,6 +212,7 @@ func TestParse_large(t *testing.T) {
 		filename  string
 		expectErr error
 	}{
+		// From https://github.com/simdjson/simdjson/tree/master/jsonexamples
 		{"apache_builds", nil},
 		{"canada", nil},
 		{"citm_catalog", nil},
@@ -188,7 +230,7 @@ func TestParse_large(t *testing.T) {
 	}
 
 	for testID, test := range tests {
-		file := filepath.Join("testdata", "json0", test.filename+"-utf8.json")
+		file := filepath.Join("testdata", "simdjson", test.filename+".json") //"-utf8.json")
 		src, err := ioutil.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
