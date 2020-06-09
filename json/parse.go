@@ -86,9 +86,9 @@ func internalParse(b []byte, buffer []byte) (out interface{}, n int, err error) 
 		}
 	}
 
-	// Number - 0 prefix is accepted in this parser. Using '1' in condiftion below ban the 0-prefix.
+	// Numbers prefixed with 0 is accepted in this parser. Using '1' in condidtion below prevent this.
 	if isdigit := (b[n] - '0') < 10; isdigit || (b[n]&0xF9) == 0x29 { // Second test is actually a bit too inclusive, weed out in body.
-		n0, negNum := n, !isdigit && b[n] == '-'
+		negNum := !isdigit && b[n] == '-'
 		if negNum || b[n] == '+' {
 			n++
 		}
@@ -101,12 +101,12 @@ func internalParse(b []byte, buffer []byte) (out interface{}, n int, err error) 
 		if n < l {
 			if b[n] == '.' {
 				var fp float64
-				var n0 int
+				var pwr int
 				for n++; n < l && (b[n]-'0') < 10; n++ {
 					fp = (fp * 10.0) + float64(b[n]&0x0F)
-					n0++
+					pwr++
 				}
-				number += fp * math.Pow10(-n0)
+				number += fp * math.Pow10(-pwr)
 			}
 
 			if n < l && (b[n]&0xDF) == 'E' {
@@ -131,8 +131,6 @@ func internalParse(b []byte, buffer []byte) (out interface{}, n int, err error) 
 
 		if negNum {
 			number = -number
-		} else if n0 == n {
-			return nil, n, ErrIllegalOperator
 		}
 		return number, n, nil
 	}
@@ -163,12 +161,14 @@ func internalParse(b []byte, buffer []byte) (out interface{}, n int, err error) 
 		array := make([]interface{}, 32)
 		for n++; n < l && b[n] != ']'; {
 			array[idx], n0, err = internalParse(b[n:], buffer)
-			// fmt.Printf("true: [%v]\n", b[n:n+4])
 
 			n += n0
 			if err != nil {
 				if err == Terminal {
 					break
+				}
+				if err == io.EOF {
+					err = Terminal
 				}
 				return nil, n, err
 			}
@@ -184,6 +184,9 @@ func internalParse(b []byte, buffer []byte) (out interface{}, n int, err error) 
 			if n < l && b[n] != ']' {
 				n++
 			}
+		}
+		if n >= l || b[n] != ']' {
+			return nil, n, Terminal
 		}
 		if idx > 0 {
 			output = append(output, array[:idx]...)
@@ -201,17 +204,20 @@ func internalParse(b []byte, buffer []byte) (out interface{}, n int, err error) 
 				if err == Terminal {
 					break
 				}
+				if err == io.EOF {
+					err = ErrMissingString
+				}
 				return nil, n, err
 			}
 
 			key, ok := v.(string)
-			if !ok {
+			if !ok || n >= l {
 				return nil, n, ErrMissingString
 			}
 
 			for ; n < l && b[n] <= 32 && (b[n] == 0x09 || b[n] == 0x0A || b[n] == 0x0D || b[n] == 0x20); n++ {
 			}
-			if n < l && b[n] != ':' {
+			if n+1 >= l || b[n] != ':' {
 				return nil, l, ErrMissingColon
 			}
 			n++
@@ -219,8 +225,16 @@ func internalParse(b []byte, buffer []byte) (out interface{}, n int, err error) 
 			obj[key], n0, err = internalParse(b[n:], buffer)
 			n += n0
 			if err != nil {
+				if err == io.EOF {
+					err = Terminal
+				}
 				delete(obj, key)
 				return nil, n, err
+			}
+
+			if n >= l {
+				delete(obj, key)
+				return nil, l, Terminal
 			}
 
 			for ; n < l && b[n] <= 32 && (b[n] == 0x09 || b[n] == 0x0A || b[n] == 0x0D || b[n] == 0x20); n++ {
@@ -232,6 +246,10 @@ func internalParse(b []byte, buffer []byte) (out interface{}, n int, err error) 
 				}
 				n++
 			}
+		}
+
+		if n >= l || b[n] != '}' {
+			return nil, n, Terminal
 		}
 		return obj, n + 1, nil
 	}

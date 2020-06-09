@@ -2,7 +2,6 @@ package json
 
 import (
 	"errors"
-	"fmt"
 	"reflect"
 	"unsafe"
 )
@@ -35,6 +34,7 @@ func main() {
 	fmt.Printf("out = %v\n", out)
 }
 */
+
 // Unmarshal try to map values from content of an interface to content of a known struct
 func Unmarshal(a, b interface{}) (err error) {
 	vb := reflect.ValueOf(b)
@@ -46,7 +46,7 @@ func Unmarshal(a, b interface{}) (err error) {
 	case float64:
 		switch vb.Elem().Kind() {
 		default:
-			err = fmt.Errorf("0: Cannot convert %s to %s\n", vb.Elem().Kind(), "float64")
+			err = ErrInvalidType
 		case reflect.Int:
 			(*b.(*int)) = int(va)
 		case reflect.Int8:
@@ -76,9 +76,15 @@ func Unmarshal(a, b interface{}) (err error) {
 		}
 
 	case string:
+		if reflect.TypeOf(b) != reflect.PtrTo(reflect.TypeOf(a)) {
+			return ErrInvalidType
+		}
 		(*b.(*string)) = va
 
 	case bool:
+		if reflect.TypeOf(b) != reflect.PtrTo(reflect.TypeOf(a)) {
+			return ErrInvalidType
+		}
 		(*b.(*bool)) = va
 
 	case []interface{}:
@@ -87,7 +93,7 @@ func Unmarshal(a, b interface{}) (err error) {
 
 		switch elemType.Kind() {
 		default:
-			err = fmt.Errorf("1: Cannot convert %s to %s\n", elemType.Kind(), "slice")
+			err = ErrInvalidType
 
 		case reflect.Map:
 		case reflect.Slice:
@@ -183,6 +189,22 @@ func Unmarshal(a, b interface{}) (err error) {
 		case reflect.Float64:
 			a := make([]float64, len(va))
 			(*b.(*[]float64)) = a
+			for i, e := range va {
+				if err = Unmarshal(e, &a[i]); err != nil {
+					break
+				}
+			}
+		case reflect.Bool:
+			a := make([]bool, len(va))
+			(*b.(*[]bool)) = a
+			for i, e := range va {
+				if err = Unmarshal(e, &a[i]); err != nil {
+					break
+				}
+			}
+		case reflect.String:
+			a := make([]string, len(va))
+			(*b.(*[]string)) = a
 			for i, e := range va {
 				if err = Unmarshal(e, &a[i]); err != nil {
 					break
