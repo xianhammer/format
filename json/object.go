@@ -1,8 +1,12 @@
 package json
 
-import "errors"
+import (
+	"errors"
+)
 
 var ErrBadType = errors.New("Bad type")
+
+type Walker func(key, value interface{}) (err error)
 
 /*type Object interface {
 	Bool(key interface{}) (bool, error)
@@ -12,6 +16,12 @@ var ErrBadType = errors.New("Bad type")
 	Object(key interface{}) (Object, error)
 }
 */
+
+type Object struct {
+	array  []interface{}
+	object map[string]interface{}
+}
+
 func New(root interface{}) (o *Object) {
 	var ok bool
 	o, ok = root.(*Object)
@@ -25,9 +35,44 @@ func New(root interface{}) (o *Object) {
 	return
 }
 
-type Object struct {
-	array  []interface{}
-	object map[string]interface{}
+func (o *Object) Walk(recursive bool, f Walker) (err error) {
+	if o.array != nil {
+		for k, v := range o.array {
+			if err = f(k, v); err != nil {
+				return
+			}
+			if recursive {
+				v.(*Object).Walk(true, f)
+			}
+		}
+	} else if o.object != nil {
+		for k, v := range o.object {
+			if err = f(k, v); err != nil {
+				return
+			}
+			if recursive {
+				v.(*Object).Walk(true, f)
+			}
+		}
+	}
+	return
+}
+
+func (o *Object) Value(key interface{}) (v interface{}, err error) {
+	var ok bool
+	if o.array != nil {
+		if k, ok_ := key.(int); ok_ {
+			v, ok = o.array[k], ok_
+		}
+	} else if o.object != nil {
+		if k, ok_ := key.(string); ok_ {
+			v, ok = o.object[k], ok_
+		}
+	}
+	if !ok {
+		err = ErrBadType
+	}
+	return
 }
 
 func (o *Object) Bool(key interface{}) (v bool, err error) {

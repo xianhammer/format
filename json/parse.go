@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"io/ioutil"
 	"math"
 
 	"github.com/xianhammer/format/parse"
@@ -44,6 +45,17 @@ var (
 )
 ... transform.NewReader(s, utf16bom)
 */
+
+func ParseFile(filename string) (out interface{}, err error) {
+	src, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return
+	}
+
+	buffer := make([]byte, len(src)) // Needed, since giving JSON a nil argument will corrupt the input after first loop.
+	out, _, err = Parse(src, buffer)
+	return
+}
 
 func Parse(b []byte, buffer []byte) (out interface{}, n int, err error) {
 	if buffer == nil {
