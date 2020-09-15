@@ -18,6 +18,7 @@ type Walker func(key, value interface{}) (err error)
 */
 
 type Object struct {
+	root   interface{}
 	array  []interface{}
 	object map[string]interface{}
 }
@@ -31,8 +32,12 @@ func New(root interface{}) (o *Object) {
 
 	a_, _ := root.([]interface{})
 	o_, _ := root.(map[string]interface{})
-	o = &Object{a_, o_}
+	o = &Object{root, a_, o_}
 	return
+}
+
+func (o *Object) RawValue() (v interface{}) {
+	return o.root
 }
 
 func (o *Object) Walk(recursive bool, f Walker) (err error) {
