@@ -2,6 +2,7 @@ package json
 
 import (
 	"errors"
+	"time"
 )
 
 var ErrBadType = errors.New("Bad type")
@@ -9,6 +10,7 @@ var ErrBadType = errors.New("Bad type")
 type Walker func(key, value interface{}) (err error)
 
 /*type Object interface {
+	Len() int
 	Bool(key interface{}) (bool, error)
 	Number(key interface{}) (float64, error)
 	String(key interface{}) (string, error)
@@ -63,6 +65,15 @@ func (o *Object) Walk(recursive bool, f Walker) (err error) {
 	return
 }
 
+func (o *Object) Len() (n int) {
+	if o.array != nil {
+		n = len(o.array)
+	} else if o.object != nil {
+		n = len(o.object)
+	}
+	return
+}
+
 func (o *Object) Value(key interface{}) (v interface{}, err error) {
 	var ok bool
 	if o.array != nil {
@@ -105,6 +116,15 @@ func (o *Object) Number(key interface{}) (v float64, err error) {
 	if !ok {
 		err = ErrBadType
 	}
+	return
+}
+
+func (o *Object) UnixTime(key interface{}) (t time.Time, err error) {
+	var n float64
+	if n, err = o.Number(key); err != nil {
+		return
+	}
+	t = time.Unix(int64(n), 0)
 	return
 }
 
@@ -180,6 +200,11 @@ func (o *Object) NumberPanic(key interface{}) (v float64) {
 	return
 }
 
+func (o *Object) UnixTimePanic(key interface{}) (t time.Time) {
+	n := o.NumberPanic(key)
+	t = time.Unix(int64(n), 0)
+	return
+}
 func (o *Object) StringPanic(key interface{}) (v string) {
 	if k, ok_ := key.(int); ok_ {
 		return o.array[k].(string)
