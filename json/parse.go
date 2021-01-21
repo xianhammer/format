@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math"
+	"unicode/utf8"
 
 	"github.com/xianhammer/format/parse"
 )
@@ -154,9 +155,10 @@ func internalParse(b []byte, buffer []byte) (out interface{}, n int, err error) 
 			if b[n] != '\\' {
 				buffer[i] = b[n]
 			} else if n++; b[n] == 'u' {
-				v, n0 := parse.Hex(b[n : n+4]) // TODO Faster convert?
+				v, n0 := parse.Hex(b[n+1 : n+5])
 				n += n0
-				buffer[i] = byte(v) // TODO rune(v)
+				i += utf8.EncodeRune(buffer[i:], rune(v))
+				// buffer[i] = byte(v) // TODO rune(v)
 			} else {
 				buffer[i] = escaped[b[n]]
 			}
