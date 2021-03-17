@@ -37,7 +37,7 @@ func (b *Block) ScanMail(callback func(key, mail string)) {
 
 			start := i - 1
 			c := line[start]
-			for ; start >= 0 && ((c-'0') < 10 || (c&0xDF)-'A' < 27) && c != '.' && c != '-' && c != '_'; start-- {
+			for ; start >= 0 && ((c-'0') < 10 || (c&0xDF)-'A' < 27 || c == '.' || c == '-' || c == '_'); start-- {
 				c = line[start]
 			}
 			start += 2 // Skip last found
