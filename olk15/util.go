@@ -2,11 +2,16 @@ package olk15
 
 import (
 	"bytes"
+	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 )
 
 // import "golang.org/x/text/encoding/charmap"
+
+func DecoderDefault(b []byte) (s string) {
+	return string(b)
+}
 
 func DecodeUTF8(b []byte) string {
 	u16s := []uint16{0}
@@ -25,6 +30,9 @@ func DecodeUTF8(b []byte) string {
 	return ret.String()
 }
 
-func defaultDecoder(b []byte) (s string) {
-	return string(b)
+func DecoderStrip(decoder func(b []byte) string) func(b []byte) string {
+	return func(b []byte) string {
+		s := decoder(b)
+		return strings.TrimSpace(s)
+	}
 }

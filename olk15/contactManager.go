@@ -1,26 +1,25 @@
 package olk15
 
-import "github.com/xianhammer/format/olk15"
-
 type ContactManager struct {
 	contacts []*Contacts
 }
 
 func NewContactManager() (m *ContactManager) {
 	m = new(ContactManager)
+	return
 }
 
-func (m *ContactManager) Length() (l int) {
+func (m *ContactManager) Len() (l int) {
 	// return len(c.mails)
 	for _, c := range m.contacts {
-		l += c.Length()
+		l += c.Len()
 	}
 	return
 }
 
 func (m *ContactManager) Name(i int) (name string) {
 	for _, c := range m.contacts {
-		l := c.Length()
+		l := c.Len()
 		if i < l {
 			return c.Name(i)
 		}
@@ -31,7 +30,7 @@ func (m *ContactManager) Name(i int) (name string) {
 
 func (m *ContactManager) Mail(i int) (mail string) {
 	for _, c := range m.contacts {
-		l := c.Length()
+		l := c.Len()
 		if i < l {
 			return c.Mail(i)
 		}
@@ -54,7 +53,8 @@ func (m *ContactManager) Add(c *Contacts) {
 }
 
 func (m *ContactManager) AddFromFile(filename string) (err error) {
-	c, err := olk15.ContactsFromFile(file.Path())
+	// c, err := ContactsFromFile(file.Path())
+	c, err := ContactsFromFile(filename)
 	if err == nil {
 		m.Add(c)
 	}

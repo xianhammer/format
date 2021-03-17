@@ -1,14 +1,35 @@
 package olk15
 
-type Header struct {
-	Magic    [4]byte
-	Ignore01 [28]byte
+import (
+	"encoding/binary"
+)
+
+const offsetCRLM = 0x20
+
+type CRLM struct { // Only entries identified are used.
+	Marker      [4]byte // CRLM
+	Unknown01   uint32
+	RecordCount uint32 // Number of "records" in a section not yet decoded.
+	// Size        uint32   // CRLM data size
+	// References []uint32 // Various reeferences, i think.
 }
 
-func (h *Header) parse(b []byte) (n int, err error) {
-	copy(h.Magic[:], b[0:4])
-	copy(h.Ignore01[:], b[4:32])
-	return 32, nil
+// func (c *CRLM) validate() bool { return true }
+
+func (c *CRLM) parse(b []byte) (n int, err error) {
+	copy(c.Marker[:], b[0:4])
+
+	bo := binary.LittleEndian
+	c.RecordCount = bo.Uint32(b[8:12])
+
+	size := bo.Uint32(b[12:16])
+
+	// data := b[16:]
+	// for i, l := 0, int(size>>2); i < l; i++ {
+	// 	c.References = append(c.References, bo.Uint32(data[i:i+4]))
+	// }
+
+	return int(size) + 16, nil
 }
 
 // func (h *Header) Received() (blocks []*Block, err error) {

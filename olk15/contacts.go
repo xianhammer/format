@@ -3,6 +3,7 @@ package olk15
 import (
 	"io"
 	"os"
+	"strings"
 )
 
 type Contacts struct {
@@ -25,16 +26,16 @@ func ContactsFromFile(filename string) (c *Contacts, err error) {
 	return
 }
 
-func (c *Contacts) Length() int {
+func (c *Contacts) Len() int {
 	return len(c.mails)
 }
 
 func (c *Contacts) Name(i int) (name string) {
-	return c.firstnames[i] + " " + c.lastnames[i]
+	return strings.TrimSpace(c.firstnames[i] + " " + c.lastnames[i])
 }
 
 func (c *Contacts) Mail(i int) (mail string) {
-	return c.mails[i]
+	return strings.TrimSpace(c.mails[i])
 }
 
 func (c *Contacts) IndexMail(s string) int {
@@ -73,13 +74,13 @@ func (c *Contacts) ReadFrom(r io.Reader) (err error) {
 	}
 	c.mails = append(c.mails, mails...)
 
-	firstnames, err := c.readTable(r, header, 0x32, DecodeUTF8)
+	firstnames, err := c.readTable(r, header, 0x32, DecoderStrip(DecodeUTF8))
 	if err != nil {
 		return
 	}
 	c.firstnames = append(c.firstnames, firstnames...)
 
-	lastnames, err := c.readTable(r, header, 0x036, DecodeUTF8)
+	lastnames, err := c.readTable(r, header, 0x036, DecoderStrip(DecodeUTF8))
 	if err != nil {
 		return
 	}
@@ -103,7 +104,7 @@ func (c *Contacts) readTable(r io.Reader, header []byte, offset int, decoder fun
 	}
 
 	if decoder == nil {
-		decoder = defaultDecoder
+		decoder = DecoderDefault
 	}
 
 	// Split table according to index (N x uint32)

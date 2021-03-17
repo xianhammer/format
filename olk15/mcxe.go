@@ -1,14 +1,23 @@
 package olk15
 
-type Header struct {
-	Magic    [4]byte
-	Ignore01 [28]byte
+import "fmt"
+
+const offsetMCXE = 0x0C
+const sizeMCXE = 0x0C
+
+type MCXE struct {
+	// Ignore01 [8]byte
+	// Ignore02 [4]byte // uint16
 }
 
-func (h *Header) parse(b []byte) (n int, err error) {
-	copy(h.Magic[:], b[0:4])
-	copy(h.Ignore01[:], b[4:32])
-	return 32, nil
+// Block seems to be 55h bytes long
+// 4D 63 78 45 38 A4 01 00 00 00 00 00 03 00 00 00 C3 02 01 00 00 00 00 00 00 00 00 00 9C 31 01 00 00 00 00 00 00 00 00 00 7B 00 00 00 01 01 D5 68 C3 FA 51 98 34 6B B6 A5 2C 4C B7 BF 33 E5 93 42 F6 F0 A7 26 D9 4E 80 80 00 02 0E 80 80 00 01 65 00 01 00 00 01
+
+func (m *MCXE) parse(b []byte) (n int, err error) {
+	// copy(h.Ignore01[:], b[0:8])
+	// copy(h.Ignore02[:], b[8:12])
+	fmt.Printf("\tMCXE %x\n", b[0:16])
+	return sizeMCXE, nil // TODO Reflect realtity
 }
 
 // func (h *Header) Received() (blocks []*Block, err error) {
