@@ -4,17 +4,17 @@ import (
 	"io"
 	"math"
 
-	"github.com/xianhammer/format/cbf"
+	"github.com/xianhammer/format/cfb"
 )
 
 type Entry struct {
-	*cbf.DirectoryEntry
+	*cfb.DirectoryEntry
 	property        *Property
 	isKnown         bool
 	interpretedName string
 }
 
-func newEntry(d *cbf.DirectoryEntry) (e *Entry) {
+func newEntry(d *cfb.DirectoryEntry) (e *Entry) {
 	e = new(Entry)
 	e.DirectoryEntry = d
 

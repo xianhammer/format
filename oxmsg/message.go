@@ -1,11 +1,9 @@
 package oxmsg
 
-import (
-	"github.com/xianhammer/format/cbf"
-)
+import "github.com/xianhammer/format/cfb"
 
 type Message struct {
-	*cbf.Document
+	*cfb.Document
 
 	isUnicode  bool
 	properties map[string][]*Entry
@@ -16,7 +14,7 @@ func New() *Message {
 }
 
 func NewFromFile(filename string) (m *Message, err error) {
-	doc, err := cbf.NewFromFile(filename)
+	doc, err := cfb.NewFromFile(filename)
 	if err == nil {
 		m = new(Message)
 		m.Document = doc
@@ -28,7 +26,7 @@ func NewFromFile(filename string) (m *Message, err error) {
 func (m *Message) Properties() map[string][]*Entry {
 	if m.properties == nil {
 		m.properties = make(map[string][]*Entry)
-		m.Document.Walk(func(de *cbf.DirectoryEntry) {
+		m.Document.Walk(func(de *cfb.DirectoryEntry) {
 			e := newEntry(de)
 			n := e.Name()
 			m.properties[n] = append(m.properties[n], e)
@@ -42,7 +40,7 @@ func (m *Message) Properties() map[string][]*Entry {
 	return m.properties
 }
 
-func (m *Message) Walk(f func(d *cbf.DirectoryEntry)) {
+func (m *Message) Walk(f func(d *cfb.DirectoryEntry)) {
 	m.Document.Walk(f)
 }
 

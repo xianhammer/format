@@ -1,4 +1,4 @@
-package cbf
+package cfb
 
 // Header the OLE file header.
 type Header struct {

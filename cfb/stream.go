@@ -1,4 +1,4 @@
-package cbf
+package cfb
 
 import (
 	"bytes"

@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/xianhammer/format/cbf"
+	"github.com/xianhammer/format/cfb"
 )
 
 type Property struct {
@@ -40,7 +40,7 @@ func (p *Property) Range() *Range {
 	return FindRange(p.ID)
 }
 
-func (p *Property) Guid() cbf.GUID {
+func (p *Property) Guid() cfb.GUID {
 	switch p.ID {
 	case PsetPublicStrings:
 		return PS_PUBLIC_STRINGS
@@ -77,7 +77,7 @@ func (p *Property) Guid() cbf.GUID {
 	case PsetAttachment:
 		return PSETID_Attachment
 	}
-	return cbf.CLSID_NULL
+	return cfb.CLSID_NULL
 }
 
 const (
