@@ -2,6 +2,7 @@ package cbf
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 )
@@ -100,21 +101,59 @@ func (d *Document) Root() (root *DirectoryEntry, err error) {
 
 func (d *Document) Walk(f func(d *DirectoryEntry)) {
 	root, err := d.Root()
-	if err != nil {
+	if err == nil {
+		root.Walk(f)
+	}
+}
+
+func (d *Document) validateFAT(start, end uint32, verbose bool) (count uint32, err error) {
+	initialStart := start
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("Recovered (start, end)=(%d, %d) [%d]:\n%v\n", initialStart, end, start, r)
+		}
+	}()
+
+	if verbose {
+		fmt.Printf("LIST: %d", start)
+	}
+	for ; start <= end; count++ {
+		start = d.fat[start]
+		if verbose {
+			fmt.Printf("->%d", start)
+		}
+	}
+
+	return
+}
+
+func (d *Document) validateFAT_(prefix string, start uint32, verbose bool) (err error) {
+	var count, sID uint32
+	sID = start
+	if start >= uint32(len(d.fat)) { // Do nothing!
+		fmt.Printf("%s: Validating entries, sID [%d] out of range [0; %d]\n", prefix, sID, len(d.fat))
 		return
 	}
-	root.Walk(f)
+
+	fmt.Printf("%s: Validating entries, sID=%d, len(d.fat)=%d\n", prefix, sID, len(d.fat))
+	count, err = d.validateFAT(sID, MAXREGSECT, verbose)
+	fmt.Printf("%s: %d entries\n", prefix, count)
+	return
 }
 
 func (d *Document) buildFAT(src []uint32) (err error) {
+	d.validateFAT_("buildFAT.a", 1, false)
+
 	var sectorIDs [128]uint32
 	for _, sID := range src {
 		if sID == ENDOFCHAIN {
 			break
 		}
+
 		if sID == FREESECT {
 			continue
 		}
+
 		if err = d.readBinary(sID, &sectorIDs); err != nil {
 			return
 		}
@@ -125,6 +164,8 @@ func (d *Document) buildFAT(src []uint32) (err error) {
 	if len(d.fat) > len(d.sectors) {
 		d.fat = d.fat[:len(d.sectors)]
 	}
+
+	d.validateFAT_("buildFAT.b", 1, true)
 
 	return
 }
@@ -161,11 +202,10 @@ func (d *Document) buildMiniFAT(streamStart, size uint32) (err error) {
 func (d *Document) stream(sID, size uint32) (s *Stream, err error) {
 	s = NewStream(d.sectorSize, size)
 	addSize := s.size == 0
+
 	if 0 < size && size < d.MiniSectorCutoff {
 		s.sectorSize = d.miniSectorSize
-
-		var n int
-		for ; sID <= MAXREGSECT; sID = d.minifat[sID] {
+		for n := 0; sID <= MAXREGSECT; sID = d.minifat[sID] {
 			if _, err = d.ministream.Seek(int64(sID*d.miniSectorSize), 0); err != nil {
 				break
 			}
@@ -182,6 +222,13 @@ func (d *Document) stream(sID, size uint32) (s *Stream, err error) {
 		return
 	}
 
+	// len(d.fat)=13952 > len(d.sectors)=24497
+	// sID  =  1
+	// Last =  4294967290
+	//
+	// panic: runtime error: index out of range [14347] with length 13952
+	// cbf.(*Document).stream()
+	// cbf/document.go:193 		l. 193: "for ; ..." ==>  panic at "d.fat[sID]". Why?
 	for ; sID <= MAXREGSECT; sID = d.fat[sID] {
 		s.add(d.sectors[sID], addSize)
 	}
@@ -239,6 +286,7 @@ func (d *Document) doValidate() (err error) {
 	if d.Signature != Signature {
 		return ErrSignature
 	}
+
 	if d.CLSID != CLSID_NULL {
 		return ErrCLSID
 	}
@@ -263,8 +311,7 @@ func (d *Document) doValidate() (err error) {
 }
 
 func (d *Document) readSectors(r io.Reader) (n int64, err error) {
-	var read int
-	for err == nil {
+	for read := 0; err == nil; {
 		s := Sector(make([]byte, d.sectorSize))
 		if read, err = r.Read(s); err == nil {
 			if uint32(read) != d.sectorSize {
@@ -284,8 +331,11 @@ func (d *Document) readSectors(r io.Reader) (n int64, err error) {
 }
 
 func (d *Document) readBinary(sID uint32, target interface{}) (err error) {
-	if err = binary.Read(d.sectors[sID].Reader(), d.byteOrder, target); err == io.EOF {
+	err = binary.Read(d.sectors[sID].Reader(), d.byteOrder, target)
+
+	if err == io.EOF {
 		err = nil
 	}
+
 	return
 }

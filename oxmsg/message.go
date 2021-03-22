@@ -47,10 +47,7 @@ func (m *Message) Walk(f func(d *cbf.DirectoryEntry)) {
 }
 
 func (m *Message) Get(propertyID string) []*Entry {
-	if m.properties == nil {
-		m.Properties()
-	}
-	return m.properties[propertyID]
+	return m.Properties()[propertyID]
 }
 
 func (m *Message) Header() (h *Header, err error) {
