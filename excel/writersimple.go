@@ -145,11 +145,11 @@ func (s *simplewriter) writeCoreProperties() (err error) {
 	b.Attr([]byte("xmlns:xsi"), []byte("http://www.w3.org/2001/XMLSchema-instance"))
 
 	b.Tag([]byte("dc:creator"))
-	b.Text([]byte("User"))
+	b.Text([]byte(Creator))
 	b.EndTag()
 
 	b.Tag([]byte("cp:lastModifiedBy"))
-	b.Text([]byte("User"))
+	b.Text([]byte(LastModifiedBy)) // TODO
 	b.EndTag()
 
 	created := time.Now().UTC().Format(time.RFC3339)
@@ -213,7 +213,7 @@ func (s *simplewriter) writeExtendedProperties() (err error) {
 	taggedText(b, "LinksUpToDate", "false")
 	taggedText(b, "SharedDoc", "false")
 	taggedText(b, "HyperlinksChanged", "false")
-	taggedText(b, "AppVersion", "12.0000")
+	taggedText(b, "AppVersion", AppVersion)
 
 	return
 }
@@ -360,6 +360,9 @@ func (s *simplewriter) writeWorkbook() (err error) {
 
 	b.Attr([]byte("xmlns"), []byte(Spreadsheet))
 	b.Attr([]byte("xmlns:r"), []byte(RelationshipsDoc))
+	b.Attr([]byte("xmlns:mc"), []byte(MarkupCompatibility))
+	b.Attr([]byte("xmlns:x15"), []byte(X15))
+	b.Attr([]byte("mc:Ignorable"), []byte("x15"))
 
 	b.Tag([]byte("fileVersion"))
 	b.Attr([]byte("appName"), []byte("xl"))
@@ -433,7 +436,7 @@ func (s *simplewriter) writeSharedStrings() (err error) {
 	ss := s.doc.Workbook.sharedstrings
 	count := strconv.Itoa(len(ss.strings))
 	b.Attr([]byte("xmlns"), []byte(Spreadsheet))
-	b.Attr([]byte("count"), []byte(count))
+	b.Attr([]byte("count"), []byte(count)) // TODO count is NOT equal to uniqueCount, often it is higher... Don't know what the number stands for.
 	b.Attr([]byte("uniqueCount"), []byte(count))
 
 	buf := make([]byte, 1024)
@@ -500,6 +503,10 @@ func (s *simplewriter) writeStyles() (err error) {
 	b.Tag([]byte("styleSheet"))
 	defer b.EndTag() // End <styleSheet>
 	b.Attr([]byte("xmlns"), []byte(Spreadsheet))
+	b.Attr([]byte("xmlns:mc"), []byte(MarkupCompatibility))
+	b.Attr([]byte("xmlns:x14ac"), []byte(X14ac))
+	b.Attr([]byte("xmlns:x16r2"), []byte(X16r2))
+	b.Attr([]byte("mc:Ignorable"), []byte("x14ac x16r2"))
 
 	styles := s.doc.Workbook.styles
 
@@ -553,16 +560,10 @@ func (s *simplewriter) writeStyles() (err error) {
 
 func (s *simplewriter) writeStylesNumFmts(b *xml.Builder, styles *Styles) (err error) {
 	numFmts := make([]*numFmt, len(styles.numFmts))
-	count, id := 0, 0
-
+	count := 0
 	for _, nf := range styles.numFmts {
 		if nf.IsCustom() {
-			id, err = strconv.Atoi(nf.numFmtId)
-			if err != nil {
-				return
-			}
-
-			numFmts[id-customNumFmtID] = nf
+			numFmts[count] = nf
 			count++
 		}
 	}
@@ -593,7 +594,8 @@ func (s *simplewriter) writeStylesCellXfs(b *xml.Builder, styles *Styles) (err e
 	b.Attr([]byte("count"), []byte(strconv.Itoa(count)))
 
 	for _, xf := range styles.cellXfs {
-		// Reset to known fonts, etc...
+		// Reset to known fonts, etc..
+		// TODO FIX.
 		xf.FontId = 0
 		xf.FillId = 0
 		xf.BorderId = 0
@@ -678,14 +680,26 @@ func (s *simplewriter) writeStylesBorders(b *xml.Builder, styles *Styles) (err e
 func (s *simplewriter) writeStylesCellStyleXfs(b *xml.Builder, styles *Styles) (err error) {
 	b.Tag([]byte("cellStyleXfs"))
 	defer b.EndTag() // End <cellStyleXfs>
-	b.Attr([]byte("count"), []byte("1"))
 
-	b.Tag([]byte("xf"))
-	b.Attr([]byte("numFmtId"), []byte("0"))
-	b.Attr([]byte("fontId"), []byte("0"))
-	b.Attr([]byte("fillId"), []byte("0"))
-	b.Attr([]byte("borderId"), []byte("0"))
-	b.EndTag() // End <xf>
+	count := len(styles.cellStyleXfs)
+	b.Attr([]byte("count"), []byte(strconv.Itoa(count)))
+
+	for _, xf := range styles.cellStyleXfs {
+		// Reset to known fonts, etc...
+		// TODO FIX!
+		xf.FontId = 0
+		xf.FillId = 0
+		xf.BorderId = 0
+		xf.toXMLBuilder(b)
+	}
+
+	// b.Attr([]byte("count"), []byte("1"))
+	// b.Tag([]byte("xf"))
+	// b.Attr([]byte("numFmtId"), []byte("0"))
+	// b.Attr([]byte("fontId"), []byte("0"))
+	// b.Attr([]byte("fillId"), []byte("0"))
+	// b.Attr([]byte("borderId"), []byte("0"))
+	// b.EndTag() // End <xf>
 
 	return
 }

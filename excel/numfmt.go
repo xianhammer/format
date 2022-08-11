@@ -3,7 +3,6 @@ package excel
 import (
 	"fmt"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/xianhammer/format/parse"
@@ -40,6 +39,7 @@ type numFmt struct {
 	numFmtId  string
 	Code      string
 	format    string
+	builtin   bool
 	formatter func(f *numFmt, data []byte) (out string)
 }
 
@@ -58,21 +58,14 @@ func NewNumFmt(numFmtId, code, goFormat string, formatter func(f *numFmt, data [
 }
 
 func (f *numFmt) IsCustom() (custom bool) {
-	if len(f.numFmtId) < 3 {
-		return
-	}
-
-	if len(f.numFmtId) > 3 {
-		return true
-	}
-
-	return f.numFmtId >= "164"
+	return f.builtin == false
 }
 
 func (f *numFmt) SetCode(code string) {
 	// TODO parse the given code...
 	// f.SetDatetime(code)
-	f.Code = strings.ReplaceAll(code, "\\", "")
+	// f.Code = strings.ReplaceAll(code, "\\", "")
+	f.Code = code
 }
 
 func (f *numFmt) SetDatetime(code string) {

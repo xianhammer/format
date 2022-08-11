@@ -71,10 +71,6 @@ func (s *Sheet) appendSheet(src *Sheet, addCols []ColumnUpdate) {
 			tgt[col].SetValue(sharedStringsTgt, value)
 		}
 
-		if extend == 0 {
-			continue
-		}
-
 		tgt = tgt[len(srcRow):]
 		for col := range addCols {
 			tgt[col].xf = styleTgt.cellXfs[0]
@@ -107,7 +103,8 @@ func (s *Sheet) open() (n int64, err error) {
 }
 
 func (s *Sheet) refresh() {
-	s.Dimension.RowEnd = s.Dimension.RowStart + len(s.Rows)
+	s.Dimension.RowEnd = (s.Dimension.RowStart - 1) + len(s.Rows)
+	// fmt.Printf("s.Dimension.RowEnd=%d (s.Dimension.RowStart=%d)\n", s.Dimension.RowEnd, s.Dimension.RowStart)
 	if len(s.Rows) > 0 {
 		// TODO Need to validate the -1
 		s.Dimension.ColumnEnd = (s.Dimension.ColumnStart + len(s.Rows[0]) - 1)
@@ -166,6 +163,26 @@ func (s *Sheet) CellByRef(ref string) (cell *Cell, err error) {
 	return
 }
 
+// ColumnByTitle
+func (s *Sheet) ColumnByTitle(row int, title string) (column int, err error) {
+	if 0 < row && row < len(s.Rows) {
+		err = fmt.Errorf("ColumnByTitle: Row index %d is out of range [%d:%d]", row, 0, len(s.Rows))
+		return
+	}
+
+	column = -1
+	sharedStrings := s.workbook.sharedstrings
+	for i, c := range s.Rows[row] {
+		cellValue := c.Value(sharedStrings, false)
+		if cellValue == title {
+			column = i
+			break
+		}
+	}
+
+	return
+}
+
 // ReadFrom implement the io.ReaderFrom interface.
 func (s *Sheet) ReadFrom(r io.Reader) (n int64, err error) {
 	saxer := new(saxSheet)
@@ -189,14 +206,17 @@ func (s *Sheet) WriteTo(w io.Writer) (n int64, err error) {
 		err = b.Close()
 	}()
 
-	sqRef := s.Dimension.String()
-
 	b.Tag([]byte("worksheet"))
 	b.Attr([]byte("xmlns"), []byte(Spreadsheet))
 	b.Attr([]byte("xmlns:r"), []byte(RelationshipsDoc))
+	b.Attr([]byte("xmlns:mc"), []byte(MarkupCompatibility))
+	b.Attr([]byte("xmlns:x14ac"), []byte(X14ac))
+	b.Attr([]byte("mc:Ignorable"), []byte("x14ac"))
+
 	defer b.EndTag() // End worksheet
 
 	// <dimension ref="A1:U1"/>
+	sqRef := s.Dimension.String()
 	b.Tag([]byte("dimension"))
 	b.Attr([]byte("ref"), []byte(sqRef))
 	b.EndTag() // End dimension
@@ -204,8 +224,8 @@ func (s *Sheet) WriteTo(w io.Writer) (n int64, err error) {
 	b.Tag([]byte("sheetViews"))
 
 	b.Tag([]byte("sheetView"))
-	b.Attr([]byte("workbookViewId"), []byte("0"))
 	b.Attr([]byte("tabSelected"), []byte("1"))
+	b.Attr([]byte("workbookViewId"), []byte("0"))
 	b.EndTag() // End sheetView
 
 	b.EndTag() // End sheetViews
@@ -253,7 +273,7 @@ func (s *Sheet) WriteTo(w io.Writer) (n int64, err error) {
 	b.Tag([]byte("pageSetup"))
 	b.Attr([]byte("paperSize"), []byte("9"))
 	b.Attr([]byte("orientation"), []byte("portrait"))
-	b.Attr([]byte("r:id"), []byte("rId1"))
+	b.Attr([]byte("r:id"), []byte("rId1")) // TODO # 1 should probably be sheet id or something...
 	b.EndTag()
 
 	return

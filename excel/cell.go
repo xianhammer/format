@@ -23,12 +23,14 @@ var excel1900Epoc = time.Date(1899, time.December, 30, 0, 0, 0, 0, time.UTC).Uni
 type Cell struct {
 	value string
 	xf    *cellXf
+	sxf   *cellStyleXf
 	type_ Type
 }
 
 func (c *Cell) From(other *Cell) {
 	c.value = other.value
 	c.xf = other.xf
+	c.sxf = other.sxf
 	c.type_ = other.type_
 }
 
@@ -52,10 +54,16 @@ func (c *Cell) Value(ss *SharedStrings, applyStyle bool) (cell string) {
 
 func (c *Cell) SetValue(ss *SharedStrings, v string) (out *Cell) {
 	if c.type_ == String {
-		c.value = ss.add(v)
+		v0 := ss.addIdx(v)
+		c.value = strconv.Itoa(v0)
 	} else {
 		c.value = v
 	}
+	return c
+}
+
+func (c *Cell) SetCellStyleXf(xf *cellStyleXf) (out *Cell) {
+	c.sxf = xf
 	return c
 }
 
@@ -70,6 +78,10 @@ func (c *Cell) SetType(t Type) (out *Cell) {
 }
 
 func (c *Cell) toXMLBuilder(b *xml.Builder, s *Sheet, row, column int) {
+	if c.value == "" { // TODO Are there more conditions // TODO Remove same condition below
+		return
+	}
+
 	b.Tag([]byte("c"))
 	defer b.EndTag() // End c
 

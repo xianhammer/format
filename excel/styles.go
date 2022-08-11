@@ -2,7 +2,6 @@ package excel
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 	"strconv"
 
@@ -10,7 +9,6 @@ import (
 )
 
 var defaultNumFmts map[string]*numFmt
-var defaultXF *cellXf
 
 // TODO Proper implement all cases below
 // https://exceljet.net/custom-number-formats
@@ -62,17 +60,16 @@ func init() {
 	defaultNumFmts["18"].format += " PM"
 	defaultNumFmts["19"].format += " PM"
 
-	//
-	defaultXF = NewCellXf(defaultNumFmts["0"])
-	defaultXF.numFmtId = "0"
-	// defaultXF.ApplyNumberFormat = 1
-	defaultXF.ApplyFont = 1
+	for _, value := range defaultNumFmts {
+		value.builtin = true
+	}
 }
 
 // Styles represent Excel styles(.xml)
 type Styles struct {
-	cellXfs []*cellXf
-	numFmts map[string]*numFmt
+	cellXfs      []*cellXf
+	cellStyleXfs []*cellStyleXf
+	numFmts      map[string]*numFmt
 }
 
 func newStyles() (s *Styles) {
@@ -82,15 +79,22 @@ func newStyles() (s *Styles) {
 	for _, nf := range defaultNumFmts {
 		s.numFmts[nf.numFmtId] = nf
 	}
-
-	s.AddCellXf(defaultXF)
 	return s
+}
+
+func (s *Styles) AddCellStyleXf(xf *cellStyleXf) {
+	// cellStyleXfs is 0-offset
+	xf.index = len(s.cellStyleXfs)
+	s.cellStyleXfs = append(s.cellStyleXfs, xf)
+	// xf.index = len(s.cellXStylefs)
+	xf.setUniqueID()
 }
 
 func (s *Styles) AddCellXf(xf *cellXf) {
 	// cellXfs is 0-offset
-	s.cellXfs = append(s.cellXfs, xf)
 	xf.index = len(s.cellXfs)
+	s.cellXfs = append(s.cellXfs, xf)
+	// xf.index = len(s.cellXfs)
 	xf.setUniqueID()
 }
 
@@ -100,12 +104,25 @@ func (s *Styles) AddNumFmt(nf *numFmt) {
 	}
 }
 
+func (s *Styles) GetCellStyleXf(idx int) (xf *cellStyleXf) {
+	return s.cellStyleXfs[idx]
+}
+
 func (s *Styles) GetCellXf(idx int) (xf *cellXf) {
 	return s.cellXfs[idx]
 }
 
 func (s *Styles) GetNumFmt(id string) (nf *numFmt) {
 	return s.numFmts[id]
+}
+
+func (s *Styles) GetCellStyleXfByFormat(format string) (xf *cellStyleXf) {
+	for _, xf = range s.cellStyleXfs {
+		if xf.nf.Code == format {
+			return
+		}
+	}
+	return nil
 }
 
 func (s *Styles) GetCellXfByFormat(format string) (xf *cellXf) {
@@ -124,6 +141,24 @@ func (s *Styles) GetNumFmtByFormat(format string) (nf *numFmt) {
 		}
 	}
 	return nil
+}
+
+func (s *Styles) importCellStyleXf(xf *cellStyleXf, nf *numFmt) (newXf *cellStyleXf) {
+	newXf = new(cellStyleXf)
+	newXf.FontId = xf.FontId
+	newXf.FillId = xf.FillId
+	newXf.BorderId = xf.BorderId
+	newXf.XfId = xf.XfId
+	newXf.ApplyNumberFormat = xf.ApplyNumberFormat
+	newXf.ApplyFont = xf.ApplyFont
+	newXf.ApplyFill = xf.ApplyFill
+	newXf.ApplyBorder = xf.ApplyBorder
+	newXf.ApplyProtection = xf.ApplyProtection
+	newXf.QuotePrefix = xf.QuotePrefix
+	newXf.nf = nf
+	newXf.numFmtId = nf.numFmtId
+	s.AddCellStyleXf(newXf)
+	return
 }
 
 func (s *Styles) importCellXf(xf *cellXf, nf *numFmt) (newXf *cellXf) {
@@ -145,10 +180,10 @@ func (s *Styles) importCellXf(xf *cellXf, nf *numFmt) (newXf *cellXf) {
 
 func (s *Styles) merge(src *Styles) {
 	customId := customNumFmtID
+
 	xfRemap := make(map[string]*cellXf)
 	for _, xf := range s.cellXfs {
 		xfRemap[xf.uniqueID] = xf
-		fmt.Printf("xfRemap[%v] = %v\n", xf.uniqueID, xf)
 		if xf.nf.IsCustom() {
 			customId++
 		}
@@ -173,6 +208,34 @@ func (s *Styles) merge(src *Styles) {
 
 		xfRemap[xf.uniqueID] = s.importCellXf(xf, s.numFmts[numFmtId])
 	}
+
+	styleXfRemap := make(map[string]*cellStyleXf)
+	for _, xf := range s.cellStyleXfs {
+		styleXfRemap[xf.uniqueID] = xf
+		if xf.nf.IsCustom() {
+			customId++
+		}
+	}
+
+	for _, xf := range src.cellStyleXfs {
+		_, found := styleXfRemap[xf.uniqueID]
+		if found {
+			continue
+		}
+
+		var numFmtId string
+		if xf.nf.IsCustom() {
+			numFmtId = strconv.Itoa(customId)
+			customId++
+
+			newNF := NewNumFmt(numFmtId, xf.nf.Code, xf.nf.format, xf.nf.formatter)
+			s.numFmts[numFmtId] = newNF
+		} else {
+			numFmtId = xf.numFmtId
+		}
+
+		styleXfRemap[xf.uniqueID] = s.importCellStyleXf(xf, s.numFmts[numFmtId])
+	}
 }
 
 func (s *Styles) open(file *File) (err error) {
@@ -187,6 +250,13 @@ func (s *Styles) open(file *File) (err error) {
 	t := xml.NewTokenizer(saxer)
 	if _, err = t.ReadFrom(bufio.NewReader(r)); err == io.EOF {
 		err = nil
+	}
+
+	for _, xf := range s.cellStyleXfs {
+		if xf.nf == nil {
+			xf.nf = s.numFmts[xf.numFmtId]
+		}
+		xf.setUniqueID()
 	}
 
 	for _, xf := range s.cellXfs {

@@ -94,10 +94,14 @@ func FormatDimension(row, column int) (s string) {
 		} else {
 			s = fmt.Sprintf("%c", 'A'+lsb)
 		}
+	} else {
+		s = "A"
 	}
 
 	if row > 0 {
 		s += strconv.Itoa(row)
+	} else {
+		s += "1"
 	}
 
 	return

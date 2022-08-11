@@ -29,7 +29,7 @@ func (s *SharedStrings) merge(src *SharedStrings) (err error) {
 	return
 }
 
-func (s *SharedStrings) add(value string) (v string) {
+func (s *SharedStrings) addIdx(value string) (idx int) {
 	if s.indeces == nil {
 		s.indeces = make(map[string]int)
 		for i, v := range s.strings {
@@ -44,11 +44,25 @@ func (s *SharedStrings) add(value string) (v string) {
 		s.strings = append(s.strings, value)
 	}
 
-	return strconv.Itoa(idx)
+	return
+}
+
+func (s *SharedStrings) add(value string) (v string) {
+	return strconv.Itoa(s.addIdx(value))
 }
 
 func (s *SharedStrings) Get(idx int) (v string) {
 	return s.strings[idx]
+}
+
+// GetIdx return 1-offset shared strings index. If 0 is returned no string matched.
+func (s *SharedStrings) GetIdx(v string) (idx int) {
+	for i, l := 0, len(s.strings); i < l; i++ {
+		if s.strings[i] == v {
+			return i
+		}
+	}
+	return
 }
 
 func (s *SharedStrings) GetFromValue(value []byte) (v string) {
